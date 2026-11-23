@@ -123,10 +123,20 @@ export function gpgError(output: RunOutput): AppError {
   };
 }
 
+/** Colon listings escape bytes as `\xNN`; the result is UTF-8 (user ids may be non-ASCII). */
 function unescapeColons(value: string): string {
-  return value.replace(/\\x([0-9a-fA-F]{2})/g, (_match, hex: string) =>
-    String.fromCodePoint(Number.parseInt(hex, 16)),
-  );
+  const bytes: number[] = [];
+  for (let index = 0; index < value.length;) {
+    const escaped = /^\\x([0-9a-fA-F]{2})/.exec(value.slice(index, index + 4));
+    if (escaped?.[1] === undefined) {
+      bytes.push(...Buffer.from(value.charAt(index), 'utf8'));
+      index += 1;
+    } else {
+      bytes.push(Number.parseInt(escaped[1], 16));
+      index += 4;
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
 }
 
 const toTimestamp = (value: string | undefined): number | null => {
@@ -287,6 +297,8 @@ export class Gpg {
       '--batch',
       '--status-fd',
       '2',
+      // Arguments are UTF-8 whatever the locale gpg was started with.
+      '--utf8-strings',
       ...unprotected,
       '--quick-generate-key',
       `${name} <${email}>`,

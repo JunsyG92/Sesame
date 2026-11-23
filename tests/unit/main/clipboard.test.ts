@@ -9,8 +9,9 @@ import { asPlainSecret } from '../../../src/shared/types';
 class FakeClipboard implements ClipboardBackend {
   public content = '';
   public cleared = 0;
-  public readText(): string {
-    return this.content;
+  public failRead = false;
+  public readText(): Promise<string> {
+    return this.failRead ? Promise.reject(new Error('busy')) : Promise.resolve(this.content);
   }
   public writeSecret(text: string): Promise<void> {
     this.content = text;
@@ -41,21 +42,21 @@ describe('SecureClipboard', () => {
     await clipboard.copy(asPlainSecret('s3cret'), 3);
     expect(backend.content).toBe('s3cret');
     expect(clipboard.secondsRemaining).toBe(3);
-    vi.advanceTimersByTime(2000);
+    await vi.advanceTimersByTimeAsync(2000);
     expect(backend.content).toBe('s3cret');
     expect(clipboard.secondsRemaining).toBe(1);
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(backend.content).toBe('');
     expect(backend.cleared).toBe(1);
     expect(countdown).toEqual([3, 2, 1, 0]);
-    vi.advanceTimersByTime(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(backend.cleared).toBe(1);
   });
 
   it('does not clear a clipboard that changed in the meantime', async () => {
     await clipboard.copy(asPlainSecret('s3cret'), 2);
     backend.content = 'something the user copied';
-    vi.advanceTimersByTime(2000);
+    await vi.advanceTimersByTimeAsync(2000);
     expect(backend.content).toBe('something the user copied');
     expect(backend.cleared).toBe(0);
     expect(countdown.at(-1)).toBe(0);
@@ -63,23 +64,23 @@ describe('SecureClipboard', () => {
 
   it('restarts the countdown when another secret is copied', async () => {
     await clipboard.copy(asPlainSecret('first'), 2);
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(1000);
     await clipboard.copy(asPlainSecret('second'), 2);
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(backend.content).toBe('second');
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(backend.content).toBe('');
     expect(backend.cleared).toBe(1);
   });
 
   it('clearNow clears immediately and is idempotent', async () => {
-    clipboard.clearNow();
+    await clipboard.clearNow();
     expect(backend.cleared).toBe(0);
     await clipboard.copy(asPlainSecret('s3cret'), 45);
-    clipboard.clearNow();
+    await clipboard.clearNow();
     expect(backend.content).toBe('');
     expect(clipboard.secondsRemaining).toBe(0);
-    clipboard.clearNow();
+    await clipboard.clearNow();
     expect(backend.cleared).toBe(1);
   });
 
@@ -87,8 +88,19 @@ describe('SecureClipboard', () => {
     const silent = new SecureClipboard(backend);
     await silent.copy(asPlainSecret('x'), 0);
     expect(silent.secondsRemaining).toBe(1);
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(backend.content).toBe('');
+  });
+});
+
+describe('SecureClipboard read failures', () => {
+  it('leaves the clipboard alone when it cannot be read', async () => {
+    const backend = new FakeClipboard();
+    const clipboard = new SecureClipboard(backend);
+    await clipboard.copy(asPlainSecret('x'), 10);
+    backend.failRead = true;
+    await clipboard.clearNow();
+    expect(backend.cleared).toBe(0);
   });
 });
 

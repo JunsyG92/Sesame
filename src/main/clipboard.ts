@@ -3,7 +3,7 @@ import type { PlainSecret } from '../shared/types';
 
 /** What `SecureClipboard` needs from the platform. */
 export interface ClipboardBackend {
-  readText(): string;
+  readText(): Promise<string>;
   /** Writes text flagged as sensitive for clipboard managers/history. */
   writeSecret(text: string): Promise<void>;
   clear(): void;
@@ -40,18 +40,24 @@ export class SecureClipboard {
     this.onCountdown(this.remaining);
     this.timer = setInterval(() => {
       this.remaining -= 1;
-      if (this.remaining <= 0) this.clearNow();
+      if (this.remaining <= 0) void this.clearNow();
       else this.onCountdown(this.remaining);
     }, 1000);
   }
 
   /** Clears the clipboard immediately, but only if it still holds our secret. */
-  public clearNow(): void {
+  public async clearNow(): Promise<void> {
     const expected = this.copiedDigest;
     this.stopTimer();
     if (expected === null) return;
-    if (digest(this.backend.readText()) === expected) this.backend.clear();
     this.onCountdown(0);
+    let current: string;
+    try {
+      current = await this.backend.readText();
+    } catch {
+      return;
+    }
+    if (digest(current) === expected) this.backend.clear();
   }
 
   private stopTimer(): void {

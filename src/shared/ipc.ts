@@ -158,7 +158,7 @@ export const ipcContract = {
 
 export type IpcChannel = keyof typeof ipcContract;
 export const IPC_CHANNELS: readonly IpcChannel[] = Object.keys(ipcContract).filter(
-  (key): key is IpcChannel => key in ipcContract,
+  (key): key is IpcChannel => Object.hasOwn(ipcContract, key),
 );
 
 export type IpcInput<C extends IpcChannel> = z.infer<(typeof ipcContract)[C]['input']>;
@@ -181,7 +181,7 @@ export const ipcEvents = {
 
 export type IpcEvent = keyof typeof ipcEvents;
 export const IPC_EVENTS: readonly IpcEvent[] = Object.keys(ipcEvents).filter(
-  (key): key is IpcEvent => key in ipcEvents,
+  (key): key is IpcEvent => Object.hasOwn(ipcEvents, key),
 );
 export type IpcEventPayload<E extends IpcEvent> = z.infer<(typeof ipcEvents)[E]>;
 
@@ -191,5 +191,7 @@ export interface SesameApi {
   on<E extends IpcEvent>(event: E, listener: (payload: IpcEventPayload<E>) => void): () => void;
 }
 
-export const isIpcChannel = (value: string): value is IpcChannel => value in ipcContract;
-export const isIpcEvent = (value: string): value is IpcEvent => value in ipcEvents;
+// `Object.hasOwn`, not `in`: inherited keys such as `constructor` must not pass the whitelist.
+export const isIpcChannel = (value: string): value is IpcChannel =>
+  Object.hasOwn(ipcContract, value);
+export const isIpcEvent = (value: string): value is IpcEvent => Object.hasOwn(ipcEvents, value);

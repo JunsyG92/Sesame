@@ -100,7 +100,7 @@ describe('gpg output parsing', () => {
       'pub:u:255:22:AAAAAAAAAAAAAAAA:1700000000:1900000000::u:::scESC:::::ed25519:::0:',
       'fpr:::::::::1111111111111111111111111111111111111111:',
       'uid:u::::1700000000::HASH::Alice \\x3a\\x29 <alice@example.org>::::::::::0:',
-      'uid:u::::1700000000::HASH::Second <second@example.org>::::::::::0:',
+      'uid:u::::1700000000::HASH::Zo\\xc3\\xa9 \u2713 <second@example.org>::::::::::0:',
       'sub:u:255:18:BBBBBBBBBBBBBBBB:1700000000::::::e:::::cv25519::',
       'fpr:::::::::2222222222222222222222222222222222222222:',
       'pub:e:255:22:CCCCCCCCCCCCCCCC:1600000000:1650000000::-:::sc:::::ed25519:::0:',
@@ -114,7 +114,7 @@ describe('gpg output parsing', () => {
       {
         fingerprint: '1111111111111111111111111111111111111111',
         keyId: 'AAAAAAAAAAAAAAAA',
-        uids: ['Alice :) <alice@example.org>', 'Second <second@example.org>'],
+        uids: ['Alice :) <alice@example.org>', 'Zoé \u2713 <second@example.org>'],
         canEncrypt: true,
         hasSecret: true,
         expired: false,
