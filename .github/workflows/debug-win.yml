@@ -9,33 +9,33 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - name: Extract Gpg4win with 7-Zip (no installation)
+      - name: Extract GnuPG from Gpg4win (no installation)
         shell: pwsh
         run: |
           choco install gpg4win -y --no-progress --limit-output --skipscripts | Out-Null
-          $installer = Get-ChildItem 'C:\ProgramData\chocolatey\lib\gpg4win\tools' -Filter 'gpg4win-*.exe' | Select-Object -First 1
-          "installer: $($installer.FullName)"
-          $seven = (Get-Command 7z -ErrorAction SilentlyContinue).Source
-          if (-not $seven) { $seven = 'C:\Program Files\7-Zip\7z.exe' }
-          "7z: $seven"
-          & $seven x $installer.FullName -oC:\gpg4win-x -y | Select-Object -Last 4
-          "== top level"
-          Get-ChildItem C:\gpg4win-x | Select-Object Name | Format-Table -HideTableHeaders | Out-String
-          "== GnuPG dir"
-          Get-ChildItem C:\gpg4win-x\GnuPG -Recurse -Depth 2 | Select-Object -First 40 -ExpandProperty FullName
-          "== any exe with gpg in name (depth)"
-          Get-ChildItem C:\gpg4win-x -Recurse -File | Where-Object { $_.Name -match '^(gpg|gpgconf|gpg-agent|gnupg).*\.exe$|gnupg.*\.exe$' } | Select-Object -First 20 -ExpandProperty FullName
-          "== bin"
-          Get-ChildItem C:\gpg4win-x\bin | Select-Object -First 40 -ExpandProperty Name
+          $outer = Get-ChildItem 'C:\ProgramData\chocolatey\lib\gpg4win\tools' -Filter 'gpg4win-*.exe' | Select-Object -First 1
+          $seven = (Get-Command 7z).Source
+          & $seven x $outer.FullName -oC:\g4w -y '$TEMP\gnupg-w32-*.exe' | Select-Object -Last 2
+          $inner = Get-ChildItem 'C:\g4w' -Recurse -Filter 'gnupg-w32-*.exe' | Select-Object -First 1
+          "inner: $($inner.FullName) $($inner.Length)"
+          & $seven x $inner.FullName -oC:\gnupg -y | Select-Object -Last 3
+          "== layout"
+          Get-ChildItem C:\gnupg | Select-Object -ExpandProperty Name
+          Get-ChildItem C:\gnupg -Recurse -Include gpg.exe,gpgconf.exe,gpg-agent.exe,gpg-connect-agent.exe,pinentry*.exe | Select-Object -ExpandProperty FullName
       - name: Try the extracted gpg
         shell: pwsh
-        continue-on-error: true
         run: |
-          $gpg = Get-ChildItem C:\gpg4win-x -Recurse -Filter gpg.exe | Select-Object -First 1
+          $gpg = Get-ChildItem C:\gnupg -Recurse -Filter gpg.exe | Select-Object -First 1
           if (-not $gpg) { throw 'no gpg.exe extracted' }
+          $bin = $gpg.DirectoryName
+          "bin: $bin"
           & $gpg.FullName --version | Select-Object -First 3
-          $home = Join-Path $env:RUNNER_TEMP 'gh'
-          New-Item -ItemType Directory $home | Out-Null
-          $env:GNUPGHOME = $home
+          $dir = Join-Path $env:RUNNER_TEMP 'gh'
+          New-Item -ItemType Directory $dir | Out-Null
+          $env:GNUPGHOME = $dir
           & $gpg.FullName --batch --pinentry-mode loopback --passphrase '' --quick-generate-key 'T <t@example.org>' future-default default never
           & $gpg.FullName --batch --list-keys
+          "hello" | & $gpg.FullName --batch --yes --encrypt --recipient t@example.org --trust-model always --output "$dir\x.gpg"
+          & $gpg.FullName --batch --decrypt "$dir\x.gpg"
+          & "$bin\gpgconf.exe" --kill all
+          "gpgconf exit: $LASTEXITCODE"
