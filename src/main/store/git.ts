@@ -49,7 +49,7 @@ export class Git {
     const result = await this.run(dir, args);
     if (!result.ok) return result;
     if (result.value.code !== 0) {
-      return err({ kind: 'git-failed', message: result.value.stderr.trim().slice(0, 600) });
+      return err({ kind: 'git-failed', message: result.value.stderr.trim().slice(-600) });
     }
     return result;
   }
@@ -151,7 +151,7 @@ export class Git {
     if (result.value.code === 0) return ok(result.value.stdout.trim());
     const rebasing = await this.run(dir, ['rebase', '--abort']);
     if (rebasing.ok && rebasing.value.code === 0) return err({ kind: 'git-conflict' });
-    return err({ kind: 'git-failed', message: result.value.stderr.trim().slice(0, 600) });
+    return err({ kind: 'git-failed', message: result.value.stderr.trim().slice(-600) });
   }
 
   public async push(dir: string): Promise<Result<string, AppError>> {
@@ -160,7 +160,7 @@ export class Git {
     const result = await this.run(dir, ['push', '--quiet', '--set-upstream', 'origin', 'HEAD']);
     if (!result.ok) return result;
     if (result.value.code === 0) return ok(result.value.stderr.trim());
-    const message = result.value.stderr.trim().slice(0, 600);
+    const message = result.value.stderr.trim().slice(-600);
     if (/rejected|non-fast-forward|fetch first/.test(message)) return err({ kind: 'git-conflict' });
     return err({ kind: 'git-failed', message });
   }

@@ -97,7 +97,8 @@ function splitDiagnostics(stderr: string): Diagnostics {
     if (line.startsWith(STATUS_PREFIX)) status.push(line.slice(STATUS_PREFIX.length).split(' '));
     else if (line.trim() !== '') human.push(line.trim());
   }
-  return { status, message: human.join('\n').slice(0, 600) };
+  // Errors come last (start-up chatter first): keep the tail, not the head.
+  return { status, message: human.join('\n').slice(-600) };
 }
 
 function isCancelled(status: string[][]): boolean {
