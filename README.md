@@ -179,7 +179,7 @@ npm run dev
 
 Les tests unitaires utilisent le **vrai** `gpg` dans un `GNUPGHOME` temporaire, avec des clés de test sans phrase de passe, et un store temporaire. Ils ne touchent jamais à `~/.gnupg` ni à `~/.password-store`.
 
-Dans un conteneur exécuté en root, Chromium refuse son bac à sable. Lancez alors Electron avec `--no-sandbox` (les tests E2E le font automatiquement en root).
+Dans un conteneur exécuté en root, Chromium refuse son bac à sable. Lancez alors Electron avec `--no-sandbox` (`npm run dev -- --noSandbox` en développement ; les tests E2E le font automatiquement en root).
 
 ### CI
 
