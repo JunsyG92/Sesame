@@ -22,18 +22,27 @@ runs:
       if: inputs.gnupg == 'true' && runner.os == 'macOS'
       shell: bash
       run: brew install gnupg pass
-    - name: Use the GnuPG bundled with Git for Windows
+    - name: Install native GnuPG (Windows)
       if: inputs.gnupg == 'true' && runner.os == 'Windows'
       shell: pwsh
       run: |
-        # Gpg4win's silent installer hangs on hosted runners (it never installs anything, and
-        # `choco install gnupg` hangs too). Git for Windows, already on the runner, ships
-        # GnuPG (gpg, gpgconf, gpg-agent), which is enough to exercise the same code paths.
-        $bin = 'C:\Program Files\Git\usr\bin'
+        # Gpg4win's installers hang on hosted runners (they copy nothing and never exit, and
+        # `choco install gnupg` hangs too), and the GnuPG bundled with Git for Windows is an
+        # MSYS build that does not understand Windows paths. So: fetch the Gpg4win package
+        # without running it, unpack the GnuPG installer nested inside with 7-Zip, and use
+        # the resulting native gpg.exe/gpgconf.exe/gpg-agent.exe directly.
+        choco install gpg4win -y --no-progress --limit-output --skipscripts | Out-Null
+        $outer = Get-ChildItem 'C:\ProgramData\chocolatey\lib\gpg4win\tools' -Filter 'gpg4win-*.exe' | Select-Object -First 1
+        if (-not $outer) { throw 'Gpg4win package not found' }
+        $seven = (Get-Command 7z).Source
+        & $seven x $outer.FullName -oC:\g4w -y '$TEMP\gnupg-w32-*.exe' | Out-Null
+        $inner = Get-ChildItem 'C:\g4w' -Recurse -Filter 'gnupg-w32-*.exe' | Select-Object -First 1
+        if (-not $inner) { throw 'GnuPG installer not found inside Gpg4win' }
+        & $seven x $inner.FullName -oC:\gnupg -y | Out-Null
         foreach ($tool in 'gpg.exe', 'gpgconf.exe', 'gpg-agent.exe') {
-          if (-not (Test-Path "$bin\$tool")) { throw "$tool not found in $bin" }
+          if (-not (Test-Path "C:\gnupg\bin\$tool")) { throw "$tool missing from the extracted GnuPG" }
         }
-        Add-Content $env:GITHUB_PATH $bin
+        Add-Content $env:GITHUB_PATH 'C:\gnupg\bin'
     - name: Show GnuPG version
       if: inputs.gnupg == 'true'
       shell: bash
