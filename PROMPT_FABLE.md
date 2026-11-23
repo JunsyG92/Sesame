@@ -144,7 +144,7 @@ Au-delà du lanceur, une fenêtre « gestionnaire » (ouverte depuis le tray ou 
   - Linux : `AppImage`, `deb`, `rpm` (x64 et arm64) ;
   - Windows : installeur `nsis` et version `portable` (x64 et arm64) ;
   - macOS : `dmg` et `zip`, **universal** (arm64 et x64), entitlements et hardened runtime prêts pour la notarisation.
-- **CI GitHub Actions** : matrice `ubuntu-latest`, `windows-latest`, `macos-latest` qui lance lint, tests et build, et publie les artefacts dans une GitHub Release sur un tag `v*`. Signature et notarisation conditionnelles via des secrets (`CSC_LINK`, `APPLE_ID`, etc.), le build ne doit pas échouer en leur absence.
+- **CI GitHub Actions** : matrice `ubuntu-latest`, `windows-latest`, `macos-latest` qui lance typecheck, lint, tests et build, et publie les artefacts dans une GitHub Release sur un tag `v*`. Signature et notarisation conditionnelles via des secrets (`CSC_LINK`, `APPLE_ID`, etc.), le build ne doit pas échouer en leur absence. Le détail des exigences de qualité, de typage, de tests et de CI est en **section 9**.
 - Mise à jour automatique avec `electron-updater` (désactivable).
 - Lancement au démarrage via `app.setLoginItemSettings` (Windows/macOS) et un fichier `.desktop` dans `~/.config/autostart` (Linux).
 
@@ -189,12 +189,50 @@ tests/
 2. `npm run dist` produit les installeurs de l'OS courant ; la CI les produit pour les trois OS.
 3. Sur une machine où `gpg` est installé, je peux en moins de 2 minutes : créer ou choisir une clé, initialiser un store, appuyer sur le raccourci, taper `github`, voir qu'il n'existe pas, le créer avec un mot de passe généré, et le retrouver puis le copier au raccourci suivant.
 4. Le store produit est lisible tel quel par `pass` sous Linux/macOS.
+5. `npm run verify` passe en local sans aucune erreur de type, aucun avertissement ESLint, avec la couverture au-dessus des seuils de la section 9.
+6. La CI GitHub Actions est **verte sur les trois OS** (quality, test, e2e, build).
 
 ---
 
-## 9. Méthode de travail
+## 9. Qualité du code, typage, tests et CI (obligatoire)
 
-Avance par phases, en t'assurant que chacune compile et passe ses tests avant de passer à la suivante :
+### Typage
+- TypeScript en mode **`strict`** partout (main, preload, renderer, tests, scripts), avec en plus `noUncheckedIndexedAccess`, `noImplicitOverride`, `exactOptionalPropertyTypes`, `noFallthroughCasesInSwitch` et `verbatimModuleSyntax`.
+- **Interdits** : `any` implicite ou explicite, `// @ts-ignore`, `// @ts-nocheck`, assertions `as` non justifiées. `// @ts-expect-error` n'est toléré qu'avec un commentaire d'explication. Ces règles sont imposées par ESLint (`@typescript-eslint/no-explicit-any`, `ban-ts-comment`, `no-non-null-assertion`).
+- **Contrats IPC typés de bout en bout** : un seul fichier `src/shared/ipc.ts` définit les canaux, leurs arguments et leurs retours. Le preload, les handlers du process principal et le renderer en dérivent leurs types. Les schémas zod servent de source de vérité : les types sont inférés avec `z.infer`, jamais écrits à la main en double.
+- Les erreurs attendues (gpg introuvable, clé absente, entrée existante, chemin invalide, conflit git…) sont des **types explicites** (union discriminée ou `Result<T, E>`), pas des chaînes de caractères.
+- Les types sont **branded** pour les valeurs à risque (`EntryPath`, `GpgKeyId`, `PlainSecret`), afin qu'on ne puisse pas passer un chemin non validé ou un secret à la place d'une chaîne quelconque.
+
+### Lint et format
+- **ESLint** (config flat, `typescript-eslint` en mode `strictTypeChecked` et `stylisticTypeChecked`, `eslint-plugin-react`, `react-hooks`, `jsx-a11y`, `eslint-plugin-security`, `eslint-plugin-n`) avec **zéro avertissement toléré** (`--max-warnings 0`).
+- **Prettier** pour le format, vérifié en CI (`prettier --check`).
+- **Hooks git** avec `husky` + `lint-staged` : lint, format et typecheck sur les fichiers modifiés avant chaque commit.
+- **Commits conventionnels** (`commitlint`).
+
+### Tests
+- **Unitaires (vitest)** : couverture minimale imposée en CI (**≥ 90 % des lignes et des branches** sur `src/main/store`, `generator`, `clipboard`, `paths`, `entry` ; ≥ 80 % sur le reste). Le build échoue en dessous du seuil.
+- Les tests sont **déterministes** : horloge simulée (`vi.useFakeTimers`) pour le TOTP et l'effacement du presse-papiers, aléa injecté pour le générateur, aucun accès au vrai `~/.password-store`, aucun test qui dépend de l'ordre d'exécution.
+- Tests de la logique du renderer avec **React Testing Library** (recherche, navigation clavier, création d'une entrée inexistante, états d'erreur), et vérification de l'accessibilité avec `jest-axe`.
+- Tests de **propriétés** (`fast-check`) pour le générateur (longueur, classes de caractères respectées, caractères exclus absents) et pour la validation des chemins (aucune chaîne ne doit permettre de sortir du store).
+- **Tests de sécurité** : tentatives de path traversal, noms d'entrée avec caractères spéciaux et injection d'arguments (`--option`) vers `gpg` et `git`, vérification qu'aucun secret n'apparaît dans les logs, les erreurs ou les arguments des processus.
+- **E2E (Playwright pour Electron)** sur les trois OS pour le parcours principal (raccourci ou `--toggle`, recherche, copie, création par génération et par presse-papiers).
+- Scripts npm attendus : `typecheck`, `lint`, `format:check`, `test`, `test:coverage`, `test:e2e`, `build`, `dist`, et `verify` qui enchaîne typecheck, lint, format:check, test:coverage et build.
+
+### CI GitHub Actions
+- Workflow **`ci.yml`** déclenché sur chaque `push` et `pull_request`, avec ces jobs :
+  1. **`quality`** (Ubuntu) : installation avec `npm ci`, `typecheck`, `lint`, `format:check`, `npm audit --audit-level=high`, vérification des licences des dépendances ;
+  2. **`test`** en **matrice** `ubuntu-latest` / `windows-latest` / `macos-latest` : installation de GnuPG sur chaque OS (apt, Chocolatey ou Homebrew), tests unitaires avec couverture, envoi du rapport (Codecov ou artefact) et échec sous le seuil ;
+  3. **`e2e`** en matrice sur les trois OS (sous Linux avec `xvfb-run`) ;
+  4. **`build`** en matrice : `electron-builder` sans publication, avec les installeurs conservés comme artefacts de la CI.
+- Workflow **`release.yml`** déclenché sur un tag `v*` : rejoue `verify` sur les trois OS, construit les installeurs, génère les sommes de contrôle SHA-256, et crée la GitHub Release avec les notes issues des commits conventionnels. Signature et notarisation conditionnelles aux secrets, sans échec en leur absence.
+- **Hygiène des workflows** : `permissions: contents: read` par défaut, actions épinglées par SHA, `concurrency` pour annuler les exécutions obsolètes, cache npm, `timeout-minutes` sur chaque job, **Dependabot** (npm et GitHub Actions) et **CodeQL** (JavaScript/TypeScript) activés.
+- Règle de **branche protégée** documentée dans le README : fusion impossible tant que `quality`, `test`, `e2e` et `build` ne sont pas verts.
+
+---
+
+## 10. Méthode de travail
+
+Avance par phases, en t'assurant que chacune **compile sans erreur de type, passe lint et tests** avant de passer à la suivante. **Écris les tests en même temps que le code** (idéalement le test d'abord pour la logique métier), pas à la fin :
 1. Squelette electron-vite, sécurité Electron, mono-instance, tray et raccourci global.
 2. Couche `gpg` et `PasswordStore` avec leurs tests unitaires.
 3. Lanceur : recherche, copie, création d'entrée inexistante.
