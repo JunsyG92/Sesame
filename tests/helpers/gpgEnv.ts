@@ -126,7 +126,9 @@ export async function createSandbox(): Promise<Sandbox> {
       );
     },
     async cleanup() {
-      await runProcess('gpgconf', { args: ['--kill', 'all'], env });
+      // Stop the sandbox's gpg-agent (it keeps GNUPGHOME busy, notably on Windows).
+      const gpgconf = path.join(path.dirname(binary), `gpgconf${path.extname(binary)}`);
+      await runProcess(gpgconf, { args: ['--kill', 'all'], env });
       await rm(root, { recursive: true, force: true, maxRetries: 5 });
     },
   };

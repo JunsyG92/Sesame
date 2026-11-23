@@ -15,6 +15,8 @@ const nodeFiles = [
   'tests/helpers/**/*.ts',
   'tests/e2e/**/*.ts',
   'scripts/**/*.{js,mjs,cjs}',
+  '.github/scripts/**/*.mjs',
+  'electron-builder.config.cjs',
   '*.config.{js,mjs,ts}',
 ];
 const reactFiles = ['src/renderer/**/*.{ts,tsx}', 'tests/unit/renderer/**/*.{ts,tsx}'];
@@ -110,6 +112,11 @@ export default tseslint.config(
   {
     files: ['**/*.{js,mjs,cjs}'],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   prettier,
 );
