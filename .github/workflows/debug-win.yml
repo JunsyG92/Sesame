@@ -1,0 +1,37 @@
+name: debug-win
+on:
+  push:
+    branches: [debug/win-gpg]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Extract Gpg4win with 7-Zip (no installation)
+        shell: pwsh
+        run: |
+          choco install gpg4win -y --no-progress --limit-output --skipscripts | Out-Null
+          $installer = Get-ChildItem 'C:\ProgramData\chocolatey\lib\gpg4win\tools' -Filter 'gpg4win-*.exe' | Select-Object -First 1
+          "installer: $($installer.FullName)"
+          $seven = (Get-Command 7z -ErrorAction SilentlyContinue).Source
+          if (-not $seven) { $seven = 'C:\Program Files\7-Zip\7z.exe' }
+          "7z: $seven"
+          & $seven x $installer.FullName -oC:\gpg4win-x -y | Select-Object -Last 4
+          "== top level"
+          Get-ChildItem C:\gpg4win-x | Select-Object Name | Format-Table -HideTableHeaders | Out-String
+          "== gpg.exe / gpgconf.exe / gpg-agent.exe"
+          Get-ChildItem C:\gpg4win-x -Recurse -Include gpg.exe,gpgconf.exe,gpg-agent.exe,gpg-connect-agent.exe | Select-Object -ExpandProperty FullName
+      - name: Try the extracted gpg
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $gpg = Get-ChildItem C:\gpg4win-x -Recurse -Filter gpg.exe | Select-Object -First 1
+          if (-not $gpg) { throw 'no gpg.exe extracted' }
+          & $gpg.FullName --version | Select-Object -First 3
+          $home = Join-Path $env:RUNNER_TEMP 'gh'
+          New-Item -ItemType Directory $home | Out-Null
+          $env:GNUPGHOME = $home
+          & $gpg.FullName --batch --pinentry-mode loopback --passphrase '' --quick-generate-key 'T <t@example.org>' future-default default never
+          & $gpg.FullName --batch --list-keys
