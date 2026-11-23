@@ -5,7 +5,7 @@ import { resolveLocale } from '../../../src/main/services';
 import type { CopyTarget, GpgKey } from '../../../src/shared/schemas';
 import { asFolderPath, asPlainSecret, ROOT_FOLDER } from '../../../src/shared/types';
 import { createSandbox, entry, keyId, unwrap, type Sandbox } from '../../helpers/gpgEnv';
-import { createHarness, type Harness } from '../../helpers/services';
+import { createHarness, hostPlatform, type Harness } from '../../helpers/services';
 import { renderQr } from './qr.test';
 
 const OTP = 'otpauth://totp/Example:alice?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Example';
@@ -46,7 +46,7 @@ describe('Services', () => {
   it('reports the application status', async () => {
     const status = unwrap(await h.call('app:status', undefined));
     expect(status).toMatchObject({
-      platform: 'linux',
+      platform: hostPlatform,
       version: '1.2.3',
       locale: 'fr',
       store: { dir: sandbox.storeDir, exists: false, initialized: false, isGit: false },

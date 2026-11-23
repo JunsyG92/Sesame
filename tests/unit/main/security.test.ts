@@ -40,7 +40,10 @@ describe('security', () => {
         attempt.startsWith('C:'),
       );
     }
-    expect((await readdir(sandbox.root)).filter((name) => name !== 'gitconfig').sort()).toEqual([
+    // Nothing outside the sandbox layout was created (`AppData` is where gpg-agent puts its
+    // sockets on Windows; `gitconfig` is the isolated git configuration).
+    const created = await readdir(sandbox.root);
+    expect(created.filter((name) => !['gitconfig', 'AppData'].includes(name)).sort()).toEqual([
       'g',
       'store',
     ]);

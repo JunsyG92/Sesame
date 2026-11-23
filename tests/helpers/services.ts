@@ -11,7 +11,12 @@ import type {
   IpcInput,
   IpcResult,
 } from '../../src/shared/ipc';
+import type { Platform } from '../../src/main/store/gpg';
 import type { Sandbox } from './gpgEnv';
+
+/** The real platform: gpg detection must follow the OS the tests run on. */
+export const hostPlatform: Platform =
+  process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux';
 
 export class MemoryClipboard implements ClipboardBackend {
   public content = '';
@@ -85,7 +90,7 @@ export async function createHarness(
     },
   };
   const ports: Ports = {
-    platform: 'linux',
+    platform: hostPlatform,
     env: sandbox.env,
     home: sandbox.root,
     version: '1.2.3',
