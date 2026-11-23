@@ -25,7 +25,6 @@ runs:
     - name: Install GnuPG (Windows)
       if: inputs.gnupg == 'true' && runner.os == 'Windows'
       shell: pwsh
-      timeout-minutes: 15
       run: |
         # Gpg4win (the standard Windows distribution, includes gpg, gpgconf and gpg-agent).
         choco install gpg4win -y --no-progress --limit-output --execution-timeout=600
