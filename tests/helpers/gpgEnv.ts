@@ -50,8 +50,13 @@ export function keyId(key: GpgKey): GpgKeyId {
 }
 
 export async function createSandbox(): Promise<Sandbox> {
-  // GnuPG sockets live in GNUPGHOME: keep the path short (sun_path limit).
-  const root = await mkdtemp(path.join(tmpdir(), 'ssm-'));
+  // GnuPG puts its agent sockets under a path derived from HOME, and a Unix socket path
+  // is limited to ~108 characters. Hosted Windows runners have a long temp directory, so
+  // there the sandbox goes at the root of the system drive instead.
+  const short = process.platform === 'win32' ? `${process.env.SystemDrive ?? 'C:'}\\` : tmpdir();
+  const root = await mkdtemp(path.join(short, 'ssm-')).catch(() =>
+    mkdtemp(path.join(tmpdir(), 'ssm-')),
+  );
   const gnupgHome = path.join(root, 'g');
   const storeDir = path.join(root, 'store');
   const { mkdir } = await import('node:fs/promises');
