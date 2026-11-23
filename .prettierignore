@@ -6,3 +6,4 @@ package-lock.json
 src/main/eff-wordlist.json
 playwright-report
 test-results
+PROMPT_FABLE.md

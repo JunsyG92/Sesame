@@ -76,7 +76,9 @@ export class Git {
     if (!(await this.isRepo(dir))) return ok(null);
     const added = await this.mustSucceed(dir, ['add', '--all', '--', ...files]);
     if (!added.ok) return added;
-    const staged = await this.run(dir, ['diff', '--cached', '--quiet']);
+    // `--no-textconv`: the store sets a gpg textconv for readable diffs; newer git versions
+    // would apply it here and see two re-encryptions of the same plaintext as "no change".
+    const staged = await this.run(dir, ['diff', '--cached', '--quiet', '--no-textconv']);
     if (!staged.ok) return staged;
     if (staged.value.code === 0) return ok(null);
     const signing = await this.run(dir, ['config', '--bool', '--get', 'pass.signcommits']);
