@@ -26,11 +26,25 @@ runs:
       if: inputs.gnupg == 'true' && runner.os == 'Windows'
       shell: pwsh
       run: |
-        # Gpg4win (the standard Windows distribution, includes gpg, gpgconf and gpg-agent).
-        choco install gpg4win -y --no-progress --limit-output --execution-timeout=600
-        foreach ($dir in @("${env:ProgramFiles(x86)}\GnuPG\bin", "${env:ProgramFiles}\GnuPG\bin")) {
-          if (Test-Path $dir) { Add-Content $env:GITHUB_PATH $dir }
+        # Gpg4win's silent installer copies its files but then never exits (it also hangs
+        # under chocolatey). Fetch the installer without running it, start it ourselves,
+        # wait until gpg and its helpers exist, then stop the lingering installer process.
+        choco install gpg4win -y --no-progress --limit-output --skipscripts
+        $installer = Get-ChildItem 'C:\ProgramData\chocolatey\lib\Gpg4win\tools' -Filter 'gpg4win-*.exe' | Select-Object -First 1
+        if (-not $installer) { throw 'Gpg4win installer not found' }
+        $process = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -PassThru
+        $bin = $null
+        for ($i = 0; $i -lt 90 -and -not $bin; $i++) {
+          Start-Sleep -Seconds 5
+          foreach ($dir in @("${env:ProgramFiles}\GnuPG\bin", "${env:ProgramFiles(x86)}\GnuPG\bin")) {
+            if ((Test-Path "$dir\gpg.exe") -and (Test-Path "$dir\gpgconf.exe") -and (Test-Path "$dir\gpg-agent.exe")) { $bin = $dir }
+          }
         }
+        if (-not $bin) { throw 'GnuPG was not installed within 7.5 minutes' }
+        Start-Sleep -Seconds 15
+        Get-Process | Where-Object { $_.Name -like 'gpg4win*' -or $_.Name -like 'gnupg-w32*' } | Stop-Process -Force -ErrorAction SilentlyContinue
+        Add-Content $env:GITHUB_PATH $bin
+        Write-Host "GnuPG installed in $bin"
     - name: Show GnuPG version
       if: inputs.gnupg == 'true'
       shell: bash
