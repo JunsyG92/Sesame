@@ -320,14 +320,14 @@ describe('Services', () => {
   });
 
   it('generates and imports keys', async () => {
-    // Without the test switch, the passphrase is requested through pinentry,
-    // which does not exist in a headless sandbox.
-    expect(
-      await h.call('gpg:generateKey', { name: 'Zoé', email: 'zoe@example.org' }),
-    ).toMatchObject({
-      ok: false,
-      error: { kind: 'gpg-failed' },
-    });
+    // Without the test switch, the passphrase is requested through pinentry, which does not
+    // exist in a headless sandbox. On Windows pinentry-basic waits for console input instead
+    // of failing, so this check only runs where the absence of a pinentry is an error.
+    if (process.platform !== 'win32') {
+      expect(
+        await h.call('gpg:generateKey', { name: 'Zoé', email: 'zoe@example.org' }),
+      ).toMatchObject({ ok: false, error: { kind: 'gpg-failed' } });
+    }
     h = await createHarness(sandbox, {
       env: { ...sandbox.env, SESAME_TEST_UNPROTECTED_KEYS: '1' },
     });
