@@ -22,29 +22,18 @@ runs:
       if: inputs.gnupg == 'true' && runner.os == 'macOS'
       shell: bash
       run: brew install gnupg pass
-    - name: Install GnuPG (Windows)
+    - name: Use the GnuPG bundled with Git for Windows
       if: inputs.gnupg == 'true' && runner.os == 'Windows'
       shell: pwsh
       run: |
-        # Gpg4win's silent installer copies its files but then never exits (it also hangs
-        # under chocolatey). Fetch the installer without running it, start it ourselves,
-        # wait until gpg and its helpers exist, then stop the lingering installer process.
-        choco install gpg4win -y --no-progress --limit-output --skipscripts
-        $installer = Get-ChildItem 'C:\ProgramData\chocolatey\lib\Gpg4win\tools' -Filter 'gpg4win-*.exe' | Select-Object -First 1
-        if (-not $installer) { throw 'Gpg4win installer not found' }
-        $process = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -PassThru
-        $bin = $null
-        for ($i = 0; $i -lt 90 -and -not $bin; $i++) {
-          Start-Sleep -Seconds 5
-          foreach ($dir in @("${env:ProgramFiles}\GnuPG\bin", "${env:ProgramFiles(x86)}\GnuPG\bin")) {
-            if ((Test-Path "$dir\gpg.exe") -and (Test-Path "$dir\gpgconf.exe") -and (Test-Path "$dir\gpg-agent.exe")) { $bin = $dir }
-          }
+        # Gpg4win's silent installer hangs on hosted runners (it never installs anything, and
+        # `choco install gnupg` hangs too). Git for Windows, already on the runner, ships
+        # GnuPG (gpg, gpgconf, gpg-agent), which is enough to exercise the same code paths.
+        $bin = 'C:\Program Files\Git\usr\bin'
+        foreach ($tool in 'gpg.exe', 'gpgconf.exe', 'gpg-agent.exe') {
+          if (-not (Test-Path "$bin\$tool")) { throw "$tool not found in $bin" }
         }
-        if (-not $bin) { throw 'GnuPG was not installed within 7.5 minutes' }
-        Start-Sleep -Seconds 15
-        Get-Process | Where-Object { $_.Name -like 'gpg4win*' -or $_.Name -like 'gnupg-w32*' } | Stop-Process -Force -ErrorAction SilentlyContinue
         Add-Content $env:GITHUB_PATH $bin
-        Write-Host "GnuPG installed in $bin"
     - name: Show GnuPG version
       if: inputs.gnupg == 'true'
       shell: bash
