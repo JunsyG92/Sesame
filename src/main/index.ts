@@ -43,7 +43,10 @@ const e2e = process.env.SESAME_E2E === '1';
 const customUserData = process.env.SESAME_USER_DATA;
 if (customUserData !== undefined && customUserData !== '') app.setPath('userData', customUserData);
 
-app.enableSandbox();
+// Every renderer is sandboxed (`sandbox: true` in its webPreferences). The global
+// switch also sandboxes helper processes, unless the OS sandbox was explicitly
+// disabled (containers running as root, where Chromium refuses to start otherwise).
+if (!app.commandLine.hasSwitch('no-sandbox')) app.enableSandbox();
 if (platform === 'linux') {
   // Lets `globalShortcut` go through org.freedesktop.portal.GlobalShortcuts on Wayland.
   app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal');

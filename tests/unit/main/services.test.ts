@@ -56,6 +56,7 @@ describe('Services', () => {
     expect(status.gpg.version).toMatch(/^\d+\./);
     expect(h.calls).toContain(`watch:${sandbox.storeDir}`);
     expect(h.last('store:changed')).toEqual({ entries: [], folders: [] });
+    expect(unwrap(await h.call('app:refresh', undefined)).version).toBe('1.2.3');
     expect(resolveLocale('system', 'en-US')).toBe('en');
     expect(resolveLocale('en', 'fr-FR')).toBe('en');
   });

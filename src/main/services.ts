@@ -285,6 +285,10 @@ export class Services {
 
   public readonly handlers: Handlers = {
     'app:status': async () => ok(await this.status()),
+    'app:refresh': async () => {
+      await this.refresh();
+      return ok(await this.status());
+    },
     'app:openManager': () => {
       this.ports.openManager();
       return Promise.resolve(DONE);

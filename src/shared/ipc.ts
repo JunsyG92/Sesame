@@ -35,6 +35,8 @@ const gitUrl = z.string().min(1).max(2048);
 export const ipcContract = {
   /* application */
   'app:status': { input: none, output: AppStatusSchema },
+  /** Re-detects gpg and the store (onboarding "check again"). */
+  'app:refresh': { input: none, output: AppStatusSchema },
   'app:openManager': { input: none, output: done },
   'app:hideLauncher': { input: none, output: done },
   'app:quit': { input: none, output: done },
