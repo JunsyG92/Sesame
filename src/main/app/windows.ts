@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { app, BrowserWindow, screen, shell } from 'electron';
 import { isIpcEvent, type IpcEvent, type IpcEventPayload } from '../../shared/ipc';
+import type { ManagerTab } from '../../shared/schemas';
 
 const PRELOAD = path.join(import.meta.dirname, '../preload/index.cjs');
 const RENDERER_DIR = path.join(import.meta.dirname, '../renderer');
@@ -136,11 +137,12 @@ export class Windows {
     else this.showLauncher();
   }
 
-  public openManager(): void {
+  public openManager(tab?: ManagerTab): void {
     if (this.manager !== null) {
       if (this.manager.isMinimized()) this.manager.restore();
       this.manager.show();
       this.manager.focus();
+      if (tab !== undefined) this.manager.webContents.send('sesame:event:manager:navigate', tab);
       return;
     }
     const window = new BrowserWindow({
@@ -162,7 +164,8 @@ export class Windows {
       if (process.platform === 'darwin') app.dock?.hide();
     });
     if (process.platform === 'darwin') void app.dock?.show();
-    void window.loadURL(pageUrl('manager'));
+    // The initial tab travels in the URL fragment (the page is not listening yet).
+    void window.loadURL(tab === undefined ? pageUrl('manager') : `${pageUrl('manager')}#${tab}`);
     this.hideLauncher();
   }
 

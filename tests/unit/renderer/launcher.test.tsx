@@ -4,7 +4,7 @@ import { axe } from 'jest-axe';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Launcher } from '../../../src/renderer/launcher/Launcher';
 import { asPlainSecret, EntryPathSchema } from '../../../src/shared/types';
-import { FakeApi, fail, ok, renderWith, SETTINGS } from './fakeApi';
+import { FakeApi, fail, NO_ROTATION, ok, renderWith, SETTINGS } from './fakeApi';
 
 const p = (name: string) => EntryPathSchema.parse(name);
 const ENTRIES = ['web/github.com/alice', 'web/gitlab.com/alice', 'mail/proton', 'bank'].map(p);
@@ -96,6 +96,7 @@ describe('Launcher', () => {
           login: 'a',
           url: null,
           hasOtp: false,
+          rotation: NO_ROTATION,
         }),
     });
     const { user, input } = setup(api, true);
@@ -138,6 +139,7 @@ describe('Launcher', () => {
           login: 'bob',
           url: null,
           hasOtp: false,
+          rotation: NO_ROTATION,
         }),
       'store:copy': ({ target }) =>
         ok({ what: target.what === 'line' ? 'line' : target.what, clearAfterSeconds: 10 }),
@@ -366,6 +368,7 @@ describe('Launcher', () => {
           login: null,
           url: null,
           hasOtp: false,
+          rotation: NO_ROTATION,
         }),
     });
     const { user, input } = setup(api);

@@ -18,7 +18,7 @@ import { EyeIcon, useSecretVisible } from '../components/secrets';
 import { Button, Confirm, Highlighted, Toasts } from '../components/ui';
 import { errorMessage } from '../i18n';
 import { useApi, useEvent } from '../lib/api';
-import { useHistory, useListing, useToasts } from '../lib/hooks';
+import { useHistory, useListing, useRotation, useToasts } from '../lib/hooks';
 import { EntrySearch, type SearchHit } from '../lib/search';
 
 type CreateKind = 'generated' | 'clipboard' | 'manual';
@@ -48,6 +48,11 @@ export function Launcher({ settings, mac }: { settings: Settings; mac: boolean }
   const { t } = useTranslation();
   const listing = useListing();
   const history = useHistory();
+  const rotation = useRotation();
+  const expired = useMemo(
+    () => new Set(rotation.filter((item) => item.state === 'expired').map((item) => item.path)),
+    [rotation],
+  );
   const { toasts, push } = useToasts();
   const copy = useCopy(push);
   const [query, setQuery] = useState('');
@@ -374,6 +379,11 @@ export function Launcher({ settings, mac }: { settings: Settings; mac: boolean }
             )}
           </span>
         </span>
+        {item.kind === 'entry' && expired.has(item.hit.path) ? (
+          <span className="shrink-0 rounded bg-red-100 px-1.5 text-xs text-red-800 dark:bg-red-900/50 dark:text-red-100">
+            ⚠ {t('rotation.expiredMark')}
+          </span>
+        ) : null}
         {item.kind === 'create' && item.create === 'clipboard' && active ? (
           <span className="flex items-center gap-1 text-xs text-zinc-500">
             {clipboard.length === 0 ? (
@@ -452,6 +462,21 @@ export function Launcher({ settings, mac }: { settings: Settings; mac: boolean }
         {busy ? <span className="text-xs text-zinc-500">{t('common.loading')}</span> : null}
       </div>
 
+      {expired.size > 0 && view.name === 'search' ? (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-2 border-b border-red-200 bg-red-50 px-4 py-1.5 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/60 dark:text-red-100"
+        >
+          <span>⚠ {t('rotation.banner', { count: expired.size })}</span>
+          <button
+            type="button"
+            className="rounded px-2 py-0.5 font-medium hover:bg-red-100 dark:hover:bg-red-900"
+            onClick={() => void api.invoke('app:openManager', { tab: 'rotation' })}
+          >
+            {t('rotation.bannerAction')} →
+          </button>
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-auto p-2" ref={listRef}>
         {view.name === 'search' ? (
           <div id="launcher-results" role="listbox" aria-label={t('launcher.results')}>

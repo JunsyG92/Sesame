@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AppStatus, Settings, StoreListing, UsageHistory } from '../../shared/schemas';
+import type {
+  AppStatus,
+  RotationItem,
+  Settings,
+  StoreListing,
+  UsageHistory,
+} from '../../shared/schemas';
 import type { SesameApi } from '../../shared/ipc';
 import { useLive } from './api';
 
@@ -62,4 +68,12 @@ export function useToasts(): {
     }, 3500);
   }, []);
   return { toasts, push };
+}
+
+const loadRotation = (api: SesameApi) => api.invoke('rotation:list');
+const EMPTY_ROTATION: RotationItem[] = [];
+
+/** Rotated passwords and their deadlines (computed without decrypting anything). */
+export function useRotation(): RotationItem[] {
+  return useLive('rotation:changed', loadRotation) ?? EMPTY_ROTATION;
 }

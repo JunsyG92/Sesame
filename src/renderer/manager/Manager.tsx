@@ -1,24 +1,39 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AppStatus, Settings as SettingsValue } from '../../shared/schemas';
+import {
+  ManagerTabSchema,
+  type AppStatus,
+  type ManagerTab,
+  type Settings as SettingsValue,
+} from '../../shared/schemas';
+import { useEvent } from '../lib/api';
 import { Toasts } from '../components/ui';
-import { useListing, useToasts } from '../lib/hooks';
+import { useListing, useRotation, useToasts } from '../lib/hooks';
 import { Git } from './Git';
 import { Grep } from './Grep';
 import { Keys } from './Keys';
 import { Onboarding } from './Onboarding';
 import { Passwords } from './Passwords';
+import { Rotation } from './Rotation';
 import { Settings } from './Settings';
 
-type Tab = 'passwords' | 'grep' | 'keys' | 'git' | 'settings';
-const TABS: readonly Tab[] = ['passwords', 'grep', 'keys', 'git', 'settings'];
+const TABS: readonly ManagerTab[] = ManagerTabSchema.options;
+
+/** The tab requested by the main process (notification click, launcher banner). */
+function initialTab(): ManagerTab {
+  const requested = ManagerTabSchema.safeParse(window.location.hash.slice(1));
+  return requested.success ? requested.data : 'passwords';
+}
 
 /** The full manager window. */
 export function Manager({ settings, status }: { settings: SettingsValue; status: AppStatus }) {
   const { t } = useTranslation();
   const listing = useListing();
   const { toasts, push } = useToasts();
-  const [tab, setTab] = useState<Tab>('passwords');
+  const [tab, setTab] = useState<ManagerTab>(initialTab);
+  const rotation = useRotation();
+  const due = rotation.filter((item) => item.state !== 'ok').length;
+  useEvent('manager:navigate', setTab);
   const needsSetup = status.gpg.path === null || !status.store.initialized;
 
   return (
@@ -43,6 +58,11 @@ export function Manager({ settings, status }: { settings: SettingsValue; status:
                   }}
                 >
                   {t(`manager.nav.${name}`)}
+                  {name === 'rotation' && due > 0 ? (
+                    <span className="ml-1 rounded-full bg-red-600 px-1.5 text-xs text-white">
+                      {due}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </nav>
@@ -54,6 +74,7 @@ export function Manager({ settings, status }: { settings: SettingsValue; status:
             {tab === 'passwords' ? (
               <Passwords listing={listing} settings={settings} notify={push} />
             ) : null}
+            {tab === 'rotation' ? <Rotation items={rotation} notify={push} /> : null}
             {tab === 'grep' ? <Grep notify={push} /> : null}
             {tab === 'keys' ? <Keys folders={listing.folders} notify={push} /> : null}
             {tab === 'git' ? <Git notify={push} /> : null}

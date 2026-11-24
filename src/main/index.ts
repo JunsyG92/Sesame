@@ -8,6 +8,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  Notification,
   session,
   Tray,
 } from 'electron';
@@ -28,7 +29,7 @@ import { createClipboardBackend } from './clipboardBackend';
 import { runProcess } from './exec';
 import { dispatch } from './ipc';
 import { resolveLocale, Services } from './services';
-import { defaultSettings, SettingsStore, UsageHistoryStore } from './settings';
+import { defaultSettings, RotationIndexStore, SettingsStore, UsageHistoryStore } from './settings';
 import { parseCliAction, ShortcutManager, type CliAction } from './shortcuts';
 import { isExecutable, type Platform } from './store/gpg';
 
@@ -81,6 +82,7 @@ async function start(): Promise<void> {
   app.on('before-quit', () => {
     windows.setQuitting();
     services?.stopAutoLock();
+    services?.stopRotationMonitor();
   });
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
@@ -103,6 +105,8 @@ async function start(): Promise<void> {
   const history = new UsageHistoryStore(path.join(userData, 'history.json'));
   await settings.load();
   await history.load();
+  const rotationIndex = new RotationIndexStore(path.join(userData, 'rotation.json'));
+  await rotationIndex.load();
   strings = mainStrings[resolveLocale(settings.value.language, app.getLocale())];
 
   const updateTray = (remaining: number): void => {
@@ -174,6 +178,7 @@ async function start(): Promise<void> {
     probe: isExecutable,
     settings,
     history,
+    rotationIndex,
     clipboard: secureClipboard,
     now: () => Date.now(),
     readClipboard: () => clipboard.readText(),
@@ -198,8 +203,14 @@ async function start(): Promise<void> {
         app.setLoginItemSettings({ openAtLogin: enabled, args: ['--hidden'] });
       }
     },
-    openManager: () => {
-      windows.openManager();
+    openManager: (tab) => {
+      windows.openManager(tab);
+    },
+    notify: (title, body, onClick) => {
+      if (!Notification.isSupported()) return;
+      const notification = new Notification({ title, body, silent: false });
+      notification.on('click', onClick);
+      notification.show();
     },
     hideLauncher: () => {
       windows.hideLauncher();
@@ -232,6 +243,7 @@ async function start(): Promise<void> {
   shortcuts.apply(settings.value.shortcut);
   await services.refresh();
   services.startAutoLock();
+  services.startRotationMonitor();
 
   const trayIcon = (): Electron.NativeImage => {
     const file =

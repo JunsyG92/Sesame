@@ -7,6 +7,7 @@ import { asPlainSecret, EntryPathSchema, type EntryPath } from '../../shared/typ
 import { errorMessage, pathReason } from '../i18n';
 import { useApi } from '../lib/api';
 import { GeneratorOptionsForm, GeneratorPreview } from './Generator';
+import { RotationSection } from './rotation';
 import { OtpDisplay, SecretText, useSecretVisible } from './secrets';
 import { Button, Field, inputClass, Modal } from './ui';
 
@@ -173,6 +174,14 @@ export function EntryDetails({
           <OtpDisplay path={entry.path} onCopy={() => void copy(entry.path, { what: 'otp' })} />
         </div>
       ) : null}
+      <RotationSection
+        entry={entry}
+        notify={notify}
+        compact={compact}
+        onChanged={() => {
+          onChanged?.();
+        }}
+      />
       {entry.notes === '' ? null : (
         <div className="py-2">
           <span className="text-xs text-zinc-500">{t('entry.notes')}</span>

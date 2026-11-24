@@ -6,7 +6,7 @@ import { Manager } from '../../../src/renderer/manager/Manager';
 import type { IpcResult } from '../../../src/shared/ipc';
 import type { EntryView, GpgKey } from '../../../src/shared/schemas';
 import { asPlainSecret, EntryPathSchema } from '../../../src/shared/types';
-import { FakeApi, fail, ok, renderWith, SETTINGS, STATUS } from './fakeApi';
+import { FakeApi, fail, NO_ROTATION, ok, renderWith, SETTINGS, STATUS } from './fakeApi';
 
 const p = (name: string) => EntryPathSchema.parse(name);
 const KEY: GpgKey = {
@@ -31,6 +31,7 @@ const VIEW = (path: string): EntryView => ({
   login: 'alice',
   url: 'example.org',
   hasOtp: true,
+  rotation: NO_ROTATION,
 });
 
 function storeApi(extra: ConstructorParameters<typeof FakeApi>[0] = {}) {

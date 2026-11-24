@@ -8,6 +8,7 @@ Sesame est **100 % compatible avec [`pass`](https://www.passwordstore.org/)**. I
 - [Premier lancement](#premier-lancement)
 - [Raccourcis](#raccourcis)
 - [Wayland](#wayland-raccourci-global)
+- [Renouvellement des mots de passe](#renouvellement-des-mots-de-passe)
 - [Compatibilité avec pass](#compatibilité-avec-pass)
 - [Paramètres](#paramètres)
 - [Développement et build](#développement-et-build)
@@ -122,6 +123,34 @@ gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/or
 
 Autres options de ligne de commande : `--show`, `--manager` (fenêtre complète) et `--hidden` (démarrage silencieux, utilisé par le lancement à l'ouverture de session).
 
+## Renouvellement des mots de passe
+
+Certains mots de passe doivent être changés régulièrement (politique d'entreprise, banque…). Sesame peut le gérer **entrée par entrée** ; c'est facultatif.
+
+1. Dans le détail d'une entrée : **Paramètres de renouvellement** → cochez « Renouveler ce mot de passe régulièrement », choisissez un délai (tous les mois, 2 mois, 3 mois, 6 mois, tous les ans, ou personnalisé en jours/semaines/mois/ans) et, si vous le souhaitez, l'**URL de la page de changement** du mot de passe.
+2. À l'échéance (et à partir de N jours avant, 7 par défaut), Sesame affiche une **notification système**, un **bandeau dans le lanceur**, un marqueur « expiré » sur l'entrée et un compteur sur l'onglet **Renouvellement**. Tant que le mot de passe n'est pas renouvelé, le rappel revient chaque jour.
+3. **Renouveler maintenant** ouvre un assistant :
+   - ouvrir la page de changement (l'URL de connexion est utilisée si aucune n'est définie) ;
+   - copier le mot de passe actuel si le site le demande ;
+   - copier un **nouveau mot de passe aléatoire** (options du générateur réglables, bouton Régénérer) ;
+   - confirmer : Sesame enregistre alors le nouveau mot de passe et la date. **Tant que vous n'avez pas confirmé, l'ancien mot de passe est conservé**, pour ne jamais le perdre si le changement échoue sur le site.
+
+Ces informations sont stockées **dans l'entrée chiffrée**, sous forme de lignes `clé: valeur` standard. Elles voyagent donc avec le store (git) et restent lisibles par `pass` et les autres clients :
+
+```
+mot-de-passe
+login: alice
+rotation: 2m
+password-changed: 2026-11-24
+change-url: https://github.com/settings/security
+```
+
+`rotation` accepte `Nd`, `Nw`, `Nm` ou `Ny` (jours, semaines, mois, années ; les mois suivent le calendrier). Modifier la 1re ligne d'une entrée renouvelée dans Sesame (éditeur, génération en place) met aussi la date à jour.
+
+Pour savoir quand prévenir **sans déchiffrer quoi que ce soit en arrière-plan** (ce qui déclencherait pinentry), Sesame tient un index local (`rotation.json` : noms d'entrées, délais et dates, aucun secret). Il est mis à jour chaque fois qu'une entrée est déchiffrée dans Sesame. Pour les entrées configurées avec `pass` ou sur un autre appareil, utilisez une fois **Renouvellement → Analyser le store**. Une entrée avec `rotation:` mais sans date connue est considérée comme expirée.
+
+Les notifications et le délai d'avertissement se règlent dans **Paramètres**.
+
 ## Compatibilité avec pass
 
 Sesame réimplémente le protocole `pass` en TypeScript, car `pass` est un script bash qui ne fonctionne pas nativement sous Windows. Le comportement est le même sur les trois OS.
@@ -131,6 +160,7 @@ Sesame réimplémente le protocole `pass` en TypeScript, car `pass` est un scrip
 - **Format** : la 1re ligne est le mot de passe. Viennent ensuite des lignes `clé: valeur` et des notes libres. Une ligne `otpauth://` active le TOTP (comme pass-otp).
 - **Chiffrement** : `gpg --encrypt --batch --yes --quiet --compress-algo=none --no-encrypt-to --recipient … --output …`, avec le contenu sur stdin. L'écriture est atomique (fichier temporaire puis renommage).
 - **Variables respectées** : `PASSWORD_STORE_DIR`, `PASSWORD_STORE_KEY`, `PASSWORD_STORE_GPG_OPTS`, `PASSWORD_STORE_CLIP_TIME` (45 s), `PASSWORD_STORE_GENERATED_LENGTH` (25), `PASSWORD_STORE_CHARACTER_SET`, `PASSWORD_STORE_CHARACTER_SET_NO_SYMBOLS`.
+- **Renouvellement** : lignes `rotation:`, `password-changed:` et `change-url:` (voir [plus haut](#renouvellement-des-mots-de-passe)). `pass` les affiche comme des lignes ordinaires ; un mot de passe changé avec `pass edit` ne met pas la date à jour (pass ignore ces lignes) : utilisez « Renouveler » dans Sesame ou modifiez la date à la main.
 - **Git** : si le store est un dépôt, chaque modification crée un commit avec les messages de pass (`Add given password for X to store.`, `Add generated password for X.`, `Edit password for X using Sesame.`, `Remove X from store.`, `Rename X to Y.`, `Copy X to Y.`, `Set GPG id to …`, `Reencrypt password store using new GPG id …`). `pass.signcommits` est respecté.
 
 | `pass`                                           | Sesame                                                                                                                       |
@@ -199,6 +229,8 @@ Dans **Settings → Branches → Branch protection rules** pour `main` :
 Les hooks locaux (husky) lancent `lint-staged` et `typecheck` avant chaque commit, et `commitlint` vérifie le format des messages (commits conventionnels).
 
 ## Limites connues et choix de conception
+
+- **Renouvellement « imposé ».** Sesame ne peut pas bloquer l'usage d'un mot de passe expiré : il le signale (notification quotidienne, bandeau, marqueur, compteur) jusqu'au renouvellement. Les échéances viennent de l'index local, qui ne connaît que les entrées déchiffrées dans Sesame ou analysées via « Analyser le store ».
 
 Les points suivants s'écartent de la demande initiale, ou dépendent de limites de l'OS ou d'Electron. Ils sont signalés ici plutôt que contournés en silence.
 

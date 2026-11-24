@@ -296,14 +296,17 @@ export class PasswordStore {
   }
 
   /** `pass generate --in-place`: replaces the first line, keeps the rest. */
-  public async replacePassword(entry: EntryPath, password: PlainSecret): Async<null> {
+  public async replacePassword(
+    entry: EntryPath,
+    password: PlainSecret,
+    /** Extra change applied to the new content (e.g. recording the change date). */
+    transform: (content: string) => string = (content) => content,
+  ): Async<PlainSecret> {
     const current = await this.show(entry);
     if (!current.ok) return current;
-    return this.write(
-      entry,
-      asPlainSecret(replaceFirstLine(current.value, password)),
-      `Replace generated password for ${entry}.`,
-    );
+    const content = asPlainSecret(transform(replaceFirstLine(current.value, password)));
+    const written = await this.write(entry, content, `Replace generated password for ${entry}.`);
+    return written.ok ? ok(content) : written;
   }
 
   /** `pass edit` with the built-in editor. */

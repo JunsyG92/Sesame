@@ -30,7 +30,7 @@ Merci de **ne pas ouvrir d'issue publique**. Utilisez l'onglet **Security → Re
 
 - Un attaquant qui exécute du code avec les droits de l'utilisateur pendant que la session est ouverte. Il peut lire le presse-papiers, enregistrer le clavier ou interroger `gpg-agent` : c'est le même modèle que `pass`.
 - La compromission de la clé privée GPG ou de sa phrase de passe.
-- Les métadonnées : **les noms des entrées (chemins) ne sont pas chiffrés**, comme avec `pass`. L'historique d'utilisation local (`history.json`) contient ces noms, des compteurs et des dates, jamais de secret.
+- Les métadonnées : **les noms des entrées (chemins) ne sont pas chiffrés**, comme avec `pass`. L'historique d'utilisation local (`history.json`) contient ces noms, des compteurs et des dates, jamais de secret. L'index de renouvellement (`rotation.json`) contient les noms des entrées à renouveler, leur délai et la date du dernier changement : il révèle donc lesquelles sont soumises à une politique de renouvellement, mais aucun secret ni aucune URL. La source de vérité reste l'entrée chiffrée.
 - La sécurité du dépôt git distant et des identifiants git (gérés par git, ssh-agent et les gestionnaires d'identifiants du système).
 
 ### Risques résiduels connus

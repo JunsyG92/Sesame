@@ -13,7 +13,7 @@ import type {
   IpcResult,
   SesameApi,
 } from '../../../src/shared/ipc';
-import type { AppStatus, Settings } from '../../../src/shared/schemas';
+import type { AppStatus, EntryView, Settings } from '../../../src/shared/schemas';
 import { createI18n } from '../../../src/renderer/i18n';
 import { ApiProvider } from '../../../src/renderer/lib/api';
 
@@ -42,6 +42,15 @@ export const SETTINGS: Settings = {
   autoLockMinutes: 15,
   reloadAgentOnLock: false,
   autoUpdate: true,
+  rotationNotifications: true,
+  rotationWarningDays: 7,
+};
+
+export const NO_ROTATION: EntryView['rotation'] = {
+  interval: null,
+  changedAt: null,
+  changeUrl: null,
+  status: null,
 };
 
 export const STATUS: AppStatus = {

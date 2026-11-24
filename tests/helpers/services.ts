@@ -3,7 +3,12 @@ import { SecureClipboard, type ClipboardBackend } from '../../src/main/clipboard
 import { rejectionSampler } from '../../src/main/generator';
 import type { RgbaImage } from '../../src/main/qr';
 import { Services, type Ports } from '../../src/main/services';
-import { defaultSettings, SettingsStore, UsageHistoryStore } from '../../src/main/settings';
+import {
+  defaultSettings,
+  RotationIndexStore,
+  SettingsStore,
+  UsageHistoryStore,
+} from '../../src/main/settings';
 import type {
   IpcChannel,
   IpcEvent,
@@ -40,6 +45,8 @@ export interface Harness {
   readonly calls: string[];
   readonly settings: SettingsStore;
   readonly history: UsageHistoryStore;
+  readonly rotationIndex: RotationIndexStore;
+  readonly notifications: { title: string; body: string; click: () => void }[];
   now: number;
   chosenFile: string | null;
   chosenDirectory: string | null;
@@ -62,6 +69,8 @@ export async function createHarness(
   });
   await settings.load();
   const history = new UsageHistoryStore(path.join(sandbox.root, 'history.json'), () => harness.now);
+  const rotationIndex = new RotationIndexStore(path.join(sandbox.root, 'rotation.json'));
+  await rotationIndex.load();
   let counter = 0;
   let services: Services | null = null;
   const harness: Harness = {
@@ -75,6 +84,8 @@ export async function createHarness(
     calls: [],
     settings,
     history,
+    rotationIndex,
+    notifications: [],
     now: 59_000,
     chosenFile: null,
     chosenDirectory: null,
@@ -101,6 +112,7 @@ export async function createHarness(
       import('../../src/main/store/gpg').then(({ isExecutable }) => isExecutable(file)),
     settings,
     history,
+    rotationIndex,
     clipboard: new SecureClipboard(clipboard),
     rng: rejectionSampler(() => (counter = (counter * 1103515245 + 12345) >>> 0)),
     now: () => harness.now,
@@ -120,7 +132,9 @@ export async function createHarness(
       harness.calls.push(`autostart:${String(enabled)}`);
       return Promise.resolve();
     },
-    openManager: () => harness.calls.push('openManager'),
+    openManager: (tab) =>
+      harness.calls.push(tab === undefined ? 'openManager' : `openManager:${tab}`),
+    notify: (title, body, click) => harness.notifications.push({ title, body, click }),
     hideLauncher: () => harness.calls.push('hideLauncher'),
     quit: () => harness.calls.push('quit'),
     setSecretVisible: (sender, visible) =>

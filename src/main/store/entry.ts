@@ -2,6 +2,7 @@ import { TOTP, URI } from 'otpauth';
 import type { AppError } from '../../shared/errors';
 import { lastSegment } from '../../shared/entryPath';
 import { err, ok, type Result } from '../../shared/result';
+import { CHANGE_URL_KEY, CHANGED_KEY, ROTATION_KEY, ROTATION_KEYS } from '../../shared/rotation';
 import type { Field, OtpCode } from '../../shared/schemas';
 
 /** Parsing of the `pass` entry format (first line = password, then free text). */
@@ -12,6 +13,15 @@ export interface ParsedEntry {
   readonly login: string | null;
   readonly url: string | null;
   readonly otpUri: string | null;
+  /** Rotation settings (`rotation:`, `password-changed:`, `change-url:` lines). */
+  readonly rotation: EntryRotation;
+}
+
+export interface EntryRotation {
+  /** Raw `rotation:` value (e.g. `2m`), null when the entry is not rotated. */
+  readonly interval: string | null;
+  readonly changedAt: string | null;
+  readonly changeUrl: string | null;
 }
 
 const FIELD_PATTERN = /^([A-Za-z0-9][A-Za-z0-9 _.-]{0,39}):\s*(.*)$/;
@@ -56,14 +66,53 @@ export function parseEntry(raw: string): ParsedEntry {
     }
     notes.push(line);
   });
+  const rotationField = (key: string): string | null => findByKeys(fields, [key]);
   return {
     password: lines[0] ?? '',
-    fields,
+    // Rotation lines are shown in their own section, not as generic fields.
+    fields: fields.filter((field) => !ROTATION_KEYS.includes(field.key.toLowerCase())),
     notes: notes.join('\n').trim(),
     login: findByKeys(fields, LOGIN_KEYS),
     url: findByKeys(fields, URL_KEYS),
     otpUri,
+    rotation: {
+      interval: rotationField(ROTATION_KEY),
+      changedAt: rotationField(CHANGED_KEY),
+      changeUrl: rotationField(CHANGE_URL_KEY),
+    },
   };
+}
+
+/**
+ * Sets (or removes, with `null`) a `key: value` line after the password line.
+ * The first matching line is replaced in place, duplicates are dropped, and a
+ * new key is appended after the last existing field so notes stay at the end.
+ */
+export function setField(raw: string, key: string, value: string | null): string {
+  const lines = splitLines(raw);
+  const matches = (line: string): boolean =>
+    FIELD_PATTERN.exec(line)?.[1]?.trim().toLowerCase() === key.toLowerCase();
+  const first = lines.findIndex((line, index) => index > 0 && matches(line));
+  const kept = lines.filter((line, index) => index === 0 || index === first || !matches(line));
+  const position = first === -1 ? -1 : kept.indexOf(lines[first] ?? '', 1);
+  if (value === null) {
+    if (position !== -1) kept.splice(position, 1);
+  } else if (position !== -1) {
+    kept[position] = `${key}: ${value}`;
+  } else {
+    let lastField = 0;
+    kept.forEach((line, index) => {
+      if (index > 0 && FIELD_PATTERN.test(line)) lastField = index;
+    });
+    kept.splice(lastField + 1, 0, `${key}: ${value}`);
+  }
+  if (kept.length === 0) kept.push('');
+  return `${kept.join('\n')}\n`;
+}
+
+/** Records today's date as the last password change, if the entry is rotated. */
+export function touchPasswordChanged(raw: string, date: string): string {
+  return parseEntry(raw).rotation.interval === null ? raw : setField(raw, CHANGED_KEY, date);
 }
 
 /** Login to copy: explicit field, else the last path segment (browserpass convention). */

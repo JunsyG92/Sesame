@@ -7,9 +7,11 @@ import {
   parseEntry,
   replaceFirstLine,
   safeHttpUrl,
+  setField,
   setOtpUri,
   splitLines,
   totpCode,
+  touchPasswordChanged,
 } from '../../../src/main/store/entry';
 
 // RFC 6238 reference secret ("12345678901234567890").
@@ -151,5 +153,51 @@ describe('totp', () => {
     expect(totpCode('otpauth://hotp/x?secret=GEZDGNBV&counter=1', 0).ok).toBe(false);
     expect(isValidOtpUri(` ${OTP_URI} `)).toBe(true);
     expect(isValidOtpUri('https://example.org')).toBe(false);
+  });
+});
+
+describe('rotation fields', () => {
+  it('reads rotation lines and keeps them out of the generic fields', () => {
+    const entry = parseEntry(
+      'pw\nlogin: a\nRotation: 2m\npassword-changed: 2026-11-24\nchange-url: https://x.org/pw\nnote',
+    );
+    expect(entry.rotation).toEqual({
+      interval: '2m',
+      changedAt: '2026-11-24',
+      changeUrl: 'https://x.org/pw',
+    });
+    expect(entry.fields).toEqual([{ key: 'login', value: 'a', line: 2 }]);
+    expect(entry.url).toBeNull();
+    expect(parseEntry('pw').rotation).toEqual({ interval: null, changedAt: null, changeUrl: null });
+  });
+
+  it('sets, replaces and removes a field without touching the rest', () => {
+    expect(setField('pw\nlogin: a\nnotes here\n', 'rotation', '2m')).toBe(
+      'pw\nlogin: a\nrotation: 2m\nnotes here\n',
+    );
+    expect(setField('pw\n', 'rotation', '2m')).toBe('pw\nrotation: 2m\n');
+    expect(setField('pw', 'rotation', '1y')).toBe('pw\nrotation: 1y\n');
+    expect(setField('pw\nRotation: 1m\nx\nrotation: 3m\n', 'rotation', '2m')).toBe(
+      'pw\nrotation: 2m\nx\n',
+    );
+    expect(setField('pw\nlogin: a\nrotation: 1m\nnote\n', 'rotation', null)).toBe(
+      'pw\nlogin: a\nnote\n',
+    );
+    expect(setField('pw\nnote\n', 'rotation', null)).toBe('pw\nnote\n');
+    // The password line is never treated as a field, even if it looks like one.
+    expect(setField('rotation: secret\n', 'rotation', '2m')).toBe(
+      'rotation: secret\nrotation: 2m\n',
+    );
+    expect(setField('', 'rotation', null)).toBe('\n');
+  });
+
+  it('records the change date only on rotated entries', () => {
+    expect(touchPasswordChanged('pw\nrotation: 2m\n', '2026-11-24')).toBe(
+      'pw\nrotation: 2m\npassword-changed: 2026-11-24\n',
+    );
+    expect(
+      touchPasswordChanged('pw\nrotation: 2m\npassword-changed: 2025-01-01\n', '2026-11-24'),
+    ).toBe('pw\nrotation: 2m\npassword-changed: 2026-11-24\n');
+    expect(touchPasswordChanged('pw\nlogin: a\n', '2026-11-24')).toBe('pw\nlogin: a\n');
   });
 });

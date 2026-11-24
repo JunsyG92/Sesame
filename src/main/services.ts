@@ -2,8 +2,25 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import type { AppError } from '../shared/errors';
 import type { IpcChannel, IpcEvent, IpcEventPayload, IpcInput, IpcResult } from '../shared/ipc';
 import { err, ok, type Result } from '../shared/result';
-import type { AppStatus, CopyOutcome, EntryView, Locale, Settings } from '../shared/schemas';
-import { asPlainSecret, type EntryPath, type PlainSecret } from '../shared/types';
+import { mainStrings } from '../shared/i18n/main';
+import {
+  CHANGED_KEY,
+  CHANGE_URL_KEY,
+  ROTATION_KEY,
+  parseInterval,
+  rotationStatus,
+  today,
+} from '../shared/rotation';
+import type {
+  AppStatus,
+  CopyOutcome,
+  EntryView,
+  Locale,
+  ManagerTab,
+  RotationItem,
+  Settings,
+} from '../shared/schemas';
+import { asPlainSecret, EntryPathSchema, type EntryPath, type PlainSecret } from '../shared/types';
 import { resolveClipTime, type SecureClipboard } from './clipboard';
 import type { Runner } from './exec';
 import {
@@ -13,16 +30,25 @@ import {
   type RandomSource,
 } from './generator';
 import { decodeQr, qrDataUrl, type RgbaImage } from './qr';
-import { resolveStoreDir, type SettingsStore, type UsageHistoryStore } from './settings';
+import {
+  resolveStoreDir,
+  type RotationIndexStore,
+  type RotationRecord,
+  type SettingsStore,
+  type UsageHistoryStore,
+} from './settings';
 import type { ShortcutStatus } from './shortcuts';
 import {
   isValidOtpUri,
   lineOf,
   loginFor,
   parseEntry,
+  replaceFirstLine,
   safeHttpUrl,
+  setField,
   setOtpUri,
   totpCode,
+  touchPasswordChanged,
 } from './store/entry';
 import { Git } from './store/git';
 import { findGpg, Gpg, type FileProbe, type Platform } from './store/gpg';
@@ -41,6 +67,7 @@ export interface Ports {
   readonly probe: FileProbe;
   readonly settings: SettingsStore;
   readonly history: UsageHistoryStore;
+  readonly rotationIndex: RotationIndexStore;
   readonly clipboard: SecureClipboard;
   readonly rng?: RandomSource;
   now(): number;
@@ -54,7 +81,9 @@ export interface Ports {
   applyShortcut(accelerator: string): boolean;
   shortcutStatus(): ShortcutStatus;
   setAutoStart(enabled: boolean): Promise<void>;
-  openManager(): void;
+  openManager(tab?: ManagerTab): void;
+  /** Shows a system notification; `onClick` runs when the user clicks it. */
+  notify(title: string, body: string, onClick: () => void): void;
   hideLauncher(): void;
   quit(): void;
   setSecretVisible(senderId: number, visible: boolean): void;
@@ -91,6 +120,9 @@ export class Services {
   private lastActivity: number;
   private lockTimer: ReturnType<typeof setInterval> | null = null;
   private locked = true;
+  private rotationTimer: ReturnType<typeof setInterval> | null = null;
+  /** Day and set of entries last notified, so the same reminder is shown once a day. */
+  private lastRotationNotice = '';
 
   public constructor(private readonly ports: Ports) {
     this.git = new Git(ports.runner, ports.env);
@@ -160,6 +192,138 @@ export class Services {
       'store:changed',
       listing?.ok === true ? listing.value : { entries: [], folders: [] },
     );
+    // Entries removed (here, with `pass` or by a git pull) leave the rotation index.
+    if (listing?.ok === true && (await this.ports.rotationIndex.prune(listing.value.entries))) {
+      this.publishRotation();
+    }
+  }
+
+  /* ------------------------------------------------------------ rotation */
+
+  /** Rotated entries with their deadline, most urgent first. Nothing is decrypted. */
+  public rotationList(): RotationItem[] {
+    const now = this.ports.now();
+    const items: RotationItem[] = [];
+    for (const [name, record] of Object.entries(this.ports.rotationIndex.value)) {
+      const interval = parseInterval(record.interval);
+      const path = EntryPathSchema.safeParse(name);
+      if (interval === null || !path.success) continue;
+      const status = rotationStatus(
+        interval,
+        record.changedAt,
+        now,
+        this.settings.rotationWarningDays,
+      );
+      items.push({
+        path: path.data,
+        interval: record.interval,
+        changedAt: record.changedAt,
+        ...status,
+      });
+    }
+    const urgency = (item: RotationItem): number => item.daysLeft ?? Number.NEGATIVE_INFINITY;
+    return items.sort((a, b) => urgency(a) - urgency(b) || a.path.localeCompare(b.path));
+  }
+
+  private publishRotation(): void {
+    this.ports.emit('rotation:changed', this.rotationList());
+    this.checkRotation();
+  }
+
+  /** Updates the index from decrypted content; returns whether it changed. */
+  private async track(path: EntryPath, raw: string, publish = true): Promise<boolean> {
+    const { interval, changedAt } = parseEntry(raw).rotation;
+    const record: RotationRecord | null =
+      interval !== null && parseInterval(interval) !== null ? { interval, changedAt } : null;
+    const changed = await this.ports.rotationIndex.set(path, record);
+    if (changed && publish) this.publishRotation();
+    return changed;
+  }
+
+  /**
+   * Notifies about expired (and soon expiring) passwords. The same reminder is
+   * shown at most once a day; a new expiry triggers a new notification.
+   */
+  public checkRotation(): void {
+    if (!this.settings.rotationNotifications) return;
+    const due = this.rotationList().filter((item) => item.state !== 'ok');
+    if (due.length === 0) {
+      this.lastRotationNotice = '';
+      return;
+    }
+    const signature = `${today(this.ports.now())}|${due.map((item) => `${item.path}:${item.state}`).join(',')}`;
+    if (signature === this.lastRotationNotice) return;
+    this.lastRotationNotice = signature;
+    const strings = mainStrings[resolveLocale(this.settings.language, this.ports.systemLocale)];
+    const expired = due.filter((item) => item.state === 'expired');
+    const names = (expired.length > 0 ? expired : due).map((item) => item.path);
+    const listed = names.slice(0, 3).join(', ') + (names.length > 3 ? '…' : '');
+    this.ports.notify(
+      expired.length > 0
+        ? strings.rotationExpired(expired.length)
+        : strings.rotationSoon(due.length),
+      `${listed}\n${strings.rotationAction}`,
+      () => {
+        this.ports.openManager('rotation');
+      },
+    );
+  }
+
+  /** Dates move on even when nothing happens: re-check regularly. */
+  public startRotationMonitor(everyMs = 3_600_000): void {
+    this.stopRotationMonitor();
+    this.checkRotation();
+    this.rotationTimer = setInterval(() => {
+      this.checkRotation();
+    }, everyMs);
+  }
+
+  public stopRotationMonitor(): void {
+    if (this.rotationTimer !== null) clearInterval(this.rotationTimer);
+    this.rotationTimer = null;
+  }
+
+  private async scanRotation(job: {
+    signal: AbortSignal;
+    onProgress: (done: number, total: number) => void;
+  }): Async<{ scanned: number; tracked: number }> {
+    const store = this.requireStore();
+    if (!store.ok) return store;
+    const listing = await store.value.list();
+    if (!listing.ok) return listing;
+    const total = listing.value.entries.length;
+    let scanned = 0;
+    let changed = false;
+    for (const entry of listing.value.entries) {
+      if (job.signal.aborted) return err({ kind: 'cancelled' });
+      const raw = await store.value.show(entry, job.signal);
+      if (raw.ok) changed = (await this.track(entry, raw.value, false)) || changed;
+      else if (['cancelled', 'gpg-cancelled', 'gpg-not-found'].includes(raw.error.kind)) {
+        if (changed) this.publishRotation();
+        return raw.error.kind === 'gpg-not-found' ? raw : err({ kind: 'cancelled' });
+      }
+      scanned += 1;
+      job.onProgress(scanned, total);
+    }
+    this.publishRotation();
+    return ok({ scanned, tracked: this.rotationList().length });
+  }
+
+  private entryRotation(raw: string): EntryView['rotation'] {
+    const rotation = parseEntry(raw).rotation;
+    const interval = rotation.interval === null ? null : parseInterval(rotation.interval);
+    return {
+      ...rotation,
+      status:
+        interval === null
+          ? null
+          : rotationStatus(
+              interval,
+              rotation.changedAt,
+              this.ports.now(),
+              this.settings.rotationWarningDays,
+            ),
+    };
   }
 
   private requireStore(): Result<PasswordStore, AppError> {
@@ -220,10 +384,13 @@ export class Services {
     this.ports.emit('history:changed', await this.ports.history.bump(entry));
   }
 
+  /** Every decryption also refreshes the rotation index of that entry. */
   private async decrypt(entry: EntryPath): Async<PlainSecret> {
     const store = this.requireStore();
     if (!store.ok) return store;
-    return store.value.show(entry);
+    const raw = await store.value.show(entry);
+    if (raw.ok) await this.track(entry, raw.value);
+    return raw;
   }
 
   private async changed<T>(result: Result<T, AppError>): Async<T> {
@@ -289,8 +456,8 @@ export class Services {
       await this.refresh();
       return ok(await this.status());
     },
-    'app:openManager': () => {
-      this.ports.openManager();
+    'app:openManager': (input) => {
+      this.ports.openManager(input?.tab);
       return Promise.resolve(DONE);
     },
     'app:hideLauncher': () => {
@@ -318,6 +485,12 @@ export class Services {
       const after = await this.ports.settings.update(patch);
       if (after.autoStart !== before.autoStart) await this.ports.setAutoStart(after.autoStart);
       this.ports.emit('settings:changed', after);
+      if (
+        after.rotationWarningDays !== before.rotationWarningDays ||
+        after.rotationNotifications !== before.rotationNotifications
+      ) {
+        this.publishRotation();
+      }
       if (after.storeDir !== before.storeDir || after.gpgPath !== before.gpgPath) {
         await this.refresh();
       } else {
@@ -345,6 +518,7 @@ export class Services {
         login: parsed.login,
         url: parsed.url,
         hasOtp: parsed.otpUri !== null,
+        rotation: this.entryRotation(raw.value),
       };
       return ok(view);
     },
@@ -391,6 +565,7 @@ export class Services {
       const store = this.requireStore();
       if (!store.ok) return store;
       const inserted = await this.changed(await store.value.insert(path, content, { force, kind }));
+      if (inserted.ok) await this.track(path, content);
       if (inserted.ok && copy) {
         await this.copySecret(asPlainSecret(parseEntry(content).password), 'password');
         await this.recordUse(path);
@@ -402,9 +577,11 @@ export class Services {
       if (!store.ok) return store;
       const text = (await this.ports.readClipboard()).replace(/\r?\n$/, '');
       if (text.trim() === '') return err({ kind: 'clipboard-empty' });
-      return this.changed(
+      const inserted = await this.changed(
         await store.value.insert(path, asPlainSecret(text), { force, kind: 'given' }),
       );
+      if (inserted.ok) await this.track(path, text);
+      return inserted;
     },
     'store:generate': async ({ path, options, inPlace, force, copy }) => {
       const store = this.requireStore();
@@ -416,12 +593,16 @@ export class Services {
       );
       if (!generated.ok) return generated;
       const { password, entropyBits } = generated.value;
+      const date = today(this.ports.now());
       const saved = await this.changed(
         inPlace
-          ? await store.value.replacePassword(path, password)
+          ? await store.value.replacePassword(path, password, (content) =>
+              touchPasswordChanged(content, date),
+            )
           : await store.value.insert(path, password, { force, kind: 'generated' }),
       );
       if (!saved.ok) return saved;
+      await this.track(path, saved.value ?? password);
       if (copy) {
         await this.copySecret(password, 'password');
         await this.recordUse(path);
@@ -431,7 +612,16 @@ export class Services {
     'store:edit': async ({ path, content }) => {
       const store = this.requireStore();
       if (!store.ok) return store;
-      return this.changed(await store.value.edit(path, content));
+      // A new password on a rotated entry restarts its rotation period.
+      const previous = await store.value.show(path);
+      const passwordChanged =
+        previous.ok && parseEntry(previous.value).password !== parseEntry(content).password;
+      const next = asPlainSecret(
+        passwordChanged ? touchPasswordChanged(content, today(this.ports.now())) : content,
+      );
+      const edited = await this.changed(await store.value.edit(path, next));
+      if (edited.ok) await this.track(path, next);
+      return edited;
     },
     'store:remove': async ({ path, recursive }) => {
       const store = this.requireStore();
@@ -446,8 +636,11 @@ export class Services {
     'store:move': async ({ from, to, force }) => {
       const store = this.requireStore();
       if (!store.ok) return store;
-      const moved = await this.changed(await store.value.move(from, to, force));
+      const result = await store.value.move(from, to, force);
+      if (result.ok) await this.ports.rotationIndex.rename(from, to);
+      const moved = await this.changed(result);
       if (moved.ok) {
+        this.publishRotation();
         await this.ports.history.rename(from, to);
         this.ports.emit('history:changed', this.ports.history.value);
       }
@@ -456,7 +649,9 @@ export class Services {
     'store:duplicate': async ({ from, to, force }) => {
       const store = this.requireStore();
       if (!store.ok) return store;
-      return this.changed(await store.value.copy(from, to, force));
+      const result = await store.value.copy(from, to, force);
+      if (result.ok && (await this.ports.rotationIndex.copy(from, to))) this.publishRotation();
+      return this.changed(result);
     },
     'store:grep': async ({ id, pattern, regex }) => {
       const store = this.requireStore();
@@ -486,6 +681,52 @@ export class Services {
       if (text === '') return err({ kind: 'invalid-argument', message: 'nothing to encode' });
       return ok({ dataUrl: await qrDataUrl(text) });
     },
+
+    'rotation:list': () => Promise.resolve(ok(this.rotationList())),
+    'rotation:configure': async ({ path, interval, changeUrl }) => {
+      const store = this.requireStore();
+      if (!store.ok) return store;
+      const raw = await this.decrypt(path);
+      if (!raw.ok) return raw;
+      let content = setField(raw.value, ROTATION_KEY, interval);
+      if (interval !== null && parseEntry(raw.value).rotation.changedAt === null) {
+        // Turning rotation on starts the period today.
+        content = setField(content, CHANGED_KEY, today(this.ports.now()));
+      }
+      content = setField(
+        content,
+        CHANGE_URL_KEY,
+        changeUrl === null || changeUrl === '' ? null : changeUrl,
+      );
+      if (content === raw.value) return DONE;
+      const edited = await this.changed(await store.value.edit(path, asPlainSecret(content)));
+      if (edited.ok) await this.track(path, content);
+      return edited;
+    },
+    'rotation:renew': async ({ path, password }) => {
+      const store = this.requireStore();
+      if (!store.ok) return store;
+      if (password.length === 0)
+        return err({ kind: 'invalid-argument', message: 'empty password' });
+      const raw = await this.decrypt(path);
+      if (!raw.ok) return raw;
+      const content = asPlainSecret(
+        setField(replaceFirstLine(raw.value, password), CHANGED_KEY, today(this.ports.now())),
+      );
+      const edited = await this.changed(await store.value.edit(path, content));
+      if (edited.ok) await this.track(path, content);
+      return edited;
+    },
+    'rotation:openChangeUrl': async ({ path }) => {
+      const raw = await this.decrypt(path);
+      if (!raw.ok) return raw;
+      const parsed = parseEntry(raw.value);
+      const url = safeHttpUrl(parsed.rotation.changeUrl ?? parsed.url ?? '');
+      if (url === null) return err({ kind: 'invalid-argument', message: 'no valid URL' });
+      await this.ports.openExternal(url);
+      return DONE;
+    },
+    'rotation:scan': ({ id }) => this.withJob(id, (job) => this.scanRotation(job)),
 
     'generator:preview': (options) => {
       const generated = generatePassword(

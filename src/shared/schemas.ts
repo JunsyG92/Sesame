@@ -72,6 +72,10 @@ export const SettingsSchema = z.object({
   autoLockMinutes: z.number().int().min(0).max(720),
   reloadAgentOnLock: z.boolean(),
   autoUpdate: z.boolean(),
+  /** System notifications when rotated passwords expire. */
+  rotationNotifications: z.boolean(),
+  /** Days before the deadline from which a password is reported as "expiring soon". */
+  rotationWarningDays: z.number().int().min(0).max(90),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 export const SettingsPatchSchema = SettingsSchema.partial();
@@ -87,6 +91,45 @@ export const FieldSchema = z.object({
 });
 export type Field = z.infer<typeof FieldSchema>;
 
+export const RotationStateSchema = z.enum(['ok', 'soon', 'expired']);
+export type RotationState = z.infer<typeof RotationStateSchema>;
+
+export const RotationItemSchema = z.object({
+  path: EntryPathSchema,
+  /** `rotation:` value, e.g. `2m`. */
+  interval: z.string(),
+  changedAt: z.string().nullable(),
+  dueAt: z.string().nullable(),
+  daysLeft: z.number().int().nullable(),
+  state: RotationStateSchema,
+});
+export type RotationItem = z.infer<typeof RotationItemSchema>;
+
+export const EntryRotationSchema = z.object({
+  interval: z.string().nullable(),
+  changedAt: z.string().nullable(),
+  changeUrl: z.string().nullable(),
+  /** Computed deadline; null when the entry is not rotated (or its interval is invalid). */
+  status: z
+    .object({
+      dueAt: z.string().nullable(),
+      daysLeft: z.number().int().nullable(),
+      state: RotationStateSchema,
+    })
+    .nullable(),
+});
+export type EntryRotation = z.infer<typeof EntryRotationSchema>;
+
+export const ManagerTabSchema = z.enum([
+  'passwords',
+  'rotation',
+  'grep',
+  'keys',
+  'git',
+  'settings',
+]);
+export type ManagerTab = z.infer<typeof ManagerTabSchema>;
+
 export const EntryViewSchema = z.object({
   path: EntryPathSchema,
   password: PlainSecretSchema,
@@ -96,6 +139,7 @@ export const EntryViewSchema = z.object({
   login: z.string().nullable(),
   url: z.string().nullable(),
   hasOtp: z.boolean(),
+  rotation: EntryRotationSchema,
 });
 export type EntryView = z.infer<typeof EntryViewSchema>;
 

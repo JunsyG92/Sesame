@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
   SettingsSchema,
   UsageHistorySchema,
@@ -29,6 +29,8 @@ export function defaultSettings(env: NodeJS.ProcessEnv, platform: Platform): Set
     autoLockMinutes: 15,
     reloadAgentOnLock: false,
     autoUpdate: true,
+    rotationNotifications: true,
+    rotationWarningDays: 7,
   };
 }
 
@@ -168,5 +170,92 @@ export class UsageHistoryStore {
       Object.entries(this.current).filter(([key]) => key !== name && !key.startsWith(`${name}/`)),
     );
     await this.file.write(this.current);
+  }
+}
+
+export const RotationIndexSchema = z.record(
+  z.string(),
+  z.object({ interval: z.string(), changedAt: z.string().nullable() }),
+);
+export type RotationIndex = z.infer<typeof RotationIndexSchema>;
+export type RotationRecord = RotationIndex[string];
+
+const sameRecord = (a: RotationRecord | undefined, b: RotationRecord | null): boolean =>
+  a === undefined
+    ? b === null
+    : b !== null && a.interval === b.interval && a.changedAt === b.changedAt;
+
+/**
+ * Local index of rotated entries: entry name, interval and date of the last
+ * change. It lets Sesame compute expirations without decrypting anything in
+ * the background. It never contains secrets; the source of truth stays the
+ * entry itself and the index is refreshed whenever an entry is decrypted.
+ */
+export class RotationIndexStore {
+  private current: RotationIndex = {};
+  private readonly file: JsonFile<typeof RotationIndexSchema>;
+
+  public constructor(file: string) {
+    this.file = new JsonFile(file, RotationIndexSchema);
+  }
+
+  public get value(): RotationIndex {
+    return this.current;
+  }
+
+  public async load(): Promise<RotationIndex> {
+    this.current = (await this.file.read()) ?? {};
+    return this.current;
+  }
+
+  private async save(next: RotationIndex): Promise<boolean> {
+    this.current = next;
+    await this.file.write(next);
+    return true;
+  }
+
+  /** Records (or forgets, with `null`) one entry; returns whether anything changed. */
+  public async set(path: string, record: RotationRecord | null): Promise<boolean> {
+    if (sameRecord(this.current[path], record)) return false;
+    const next = { ...this.current };
+    if (record === null) Reflect.deleteProperty(next, path);
+    else next[path] = record;
+    return this.save(next);
+  }
+
+  /** Follows `pass mv` (entries and folders). */
+  public async rename(from: string, to: string): Promise<boolean> {
+    let changed = false;
+    const next: RotationIndex = {};
+    for (const [name, record] of Object.entries(this.current)) {
+      if (name === from || name.startsWith(`${from}/`)) {
+        next[to + name.slice(from.length)] = record;
+        changed = true;
+      } else next[name] = record;
+    }
+    return changed ? this.save(next) : false;
+  }
+
+  /** Follows `pass cp` (entries and folders). */
+  public async copy(from: string, to: string): Promise<boolean> {
+    const next = { ...this.current };
+    let changed = false;
+    for (const [name, record] of Object.entries(this.current)) {
+      if (name === from || name.startsWith(`${from}/`)) {
+        next[to + name.slice(from.length)] = record;
+        changed = true;
+      }
+    }
+    return changed ? this.save(next) : false;
+  }
+
+  /** Drops entries that no longer exist (removed with `pass rm`, a git pull…). */
+  public async prune(existing: readonly string[]): Promise<boolean> {
+    const keep = new Set(existing);
+    const names = Object.keys(this.current);
+    if (names.every((name) => keep.has(name))) return false;
+    return this.save(
+      Object.fromEntries(Object.entries(this.current).filter(([name]) => keep.has(name))),
+    );
   }
 }

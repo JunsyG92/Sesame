@@ -12,6 +12,8 @@ import {
   GitStatusSchema,
   GpgKeySchema,
   GrepMatchSchema,
+  ManagerTabSchema,
+  RotationItemSchema,
   OtpCodeSchema,
   RecipientsInfoSchema,
   SettingsPatchSchema,
@@ -19,6 +21,7 @@ import {
   StoreListingSchema,
   UsageHistorySchema,
 } from './schemas';
+import { parseInterval } from './rotation';
 import { EntryPathSchema, FolderPathSchema, GpgKeyIdSchema, PlainSecretSchema } from './types';
 
 /**
@@ -37,7 +40,10 @@ export const ipcContract = {
   'app:status': { input: none, output: AppStatusSchema },
   /** Re-detects gpg and the store (onboarding "check again"). */
   'app:refresh': { input: none, output: AppStatusSchema },
-  'app:openManager': { input: none, output: done },
+  'app:openManager': {
+    input: z.object({ tab: ManagerTabSchema }).optional(),
+    output: done,
+  },
   'app:hideLauncher': { input: none, output: done },
   'app:quit': { input: none, output: done },
   'app:secretVisible': { input: z.object({ visible: z.boolean() }), output: done },
@@ -136,6 +142,36 @@ export const ipcContract = {
   'otp:importImage': { input: z.object({ path: EntryPathSchema }), output: done },
   'otp:importScreen': { input: z.object({ path: EntryPathSchema }), output: done },
 
+  /* password rotation */
+  'rotation:list': { input: none, output: z.array(RotationItemSchema) },
+  'rotation:configure': {
+    input: z.object({
+      path: EntryPathSchema,
+      /** `null` turns rotation off. */
+      interval: z
+        .string()
+        .refine((value) => parseInterval(value) !== null, { message: 'invalid interval' })
+        .nullable(),
+      changeUrl: z
+        .string()
+        .max(2048)
+        .refine((value) => value === '' || /^https?:\/\/\S+$/i.test(value), {
+          message: 'invalid URL',
+        })
+        .nullable(),
+    }),
+    output: done,
+  },
+  'rotation:renew': {
+    input: z.object({ path: EntryPathSchema, password: PlainSecretSchema }),
+    output: done,
+  },
+  'rotation:openChangeUrl': { input: z.object({ path: EntryPathSchema }), output: done },
+  'rotation:scan': {
+    input: z.object({ id: jobId }),
+    output: z.object({ scanned: z.number(), tracked: z.number() }),
+  },
+
   /* gpg */
   'gpg:listKeys': { input: z.object({ secretOnly: z.boolean() }), output: z.array(GpgKeySchema) },
   'gpg:generateKey': {
@@ -167,7 +203,8 @@ export type IpcInput<C extends IpcChannel> = z.infer<(typeof ipcContract)[C]['in
 export type IpcOutput<C extends IpcChannel> = z.infer<(typeof ipcContract)[C]['output']>;
 export type IpcResult<C extends IpcChannel> = Result<IpcOutput<C>, AppError>;
 // `void` inputs make the argument optional at call sites.
-export type IpcArgs<C extends IpcChannel> = undefined extends IpcInput<C> ? [] : [IpcInput<C>];
+export type IpcArgs<C extends IpcChannel> =
+  undefined extends IpcInput<C> ? [input?: IpcInput<C>] : [input: IpcInput<C>];
 
 /* Events pushed from the main process to renderers. */
 export const ipcEvents = {
@@ -179,6 +216,8 @@ export const ipcEvents = {
   'app:lock': z.null(),
   'clipboard:countdown': z.object({ remaining: z.number() }),
   'job:progress': z.object({ id: z.string(), done: z.number(), total: z.number() }),
+  'rotation:changed': z.array(RotationItemSchema),
+  'manager:navigate': ManagerTabSchema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type IpcEvent = keyof typeof ipcEvents;

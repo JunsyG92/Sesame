@@ -231,6 +231,34 @@ export function Settings({
       ))}
 
       <section className="flex flex-col gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+        <h3 className="text-sm font-medium">{t('rotation.title')}</h3>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="accent-amber-600"
+            checked={settings.rotationNotifications}
+            onChange={(event) => void update({ rotationNotifications: event.target.checked })}
+          />
+          {t('rotation.notifications')}
+        </label>
+        <Field label={t('rotation.warningDays')}>
+          <input
+            type="number"
+            min={0}
+            max={90}
+            className={`${inputClass} w-24`}
+            value={settings.rotationWarningDays}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (Number.isInteger(value) && value >= 0 && value <= 90) {
+                void update({ rotationWarningDays: value });
+              }
+            }}
+          />
+        </Field>
+      </section>
+
+      <section className="flex flex-col gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
         <h3 className="text-sm font-medium">{t('settings.generator')}</h3>
         <GeneratorOptionsForm options={settings.generator} onChange={setGenerator} />
         <h3 className="text-sm font-medium">{t('generator.presets')}</h3>

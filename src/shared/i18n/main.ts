@@ -9,6 +9,9 @@ interface MainStrings {
   readonly quit: string;
   clearNow(seconds: number): string;
   clearingIn(seconds: number): string;
+  readonly rotationAction: string;
+  rotationExpired(count: number): string;
+  rotationSoon(count: number): string;
 }
 
 export const mainStrings: Readonly<Record<Locale, MainStrings>> = {
@@ -20,6 +23,11 @@ export const mainStrings: Readonly<Record<Locale, MainStrings>> = {
     quit: 'Quit Sesame',
     clearNow: (seconds) => `Clear clipboard now (${String(seconds)} s left)`,
     clearingIn: (seconds) => `Sesame — clipboard cleared in ${String(seconds)} s`,
+    rotationAction: 'Click to renew.',
+    rotationExpired: (count) =>
+      count === 1 ? 'A password has expired' : `${String(count)} passwords have expired`,
+    rotationSoon: (count) =>
+      count === 1 ? 'A password expires soon' : `${String(count)} passwords expire soon`,
   },
   fr: {
     openLauncher: 'Rechercher un mot de passe…',
@@ -29,5 +37,12 @@ export const mainStrings: Readonly<Record<Locale, MainStrings>> = {
     quit: 'Quitter Sesame',
     clearNow: (seconds) => `Effacer le presse-papiers (encore ${String(seconds)} s)`,
     clearingIn: (seconds) => `Sesame — presse-papiers effacé dans ${String(seconds)} s`,
+    rotationAction: 'Cliquez pour le renouveler.',
+    rotationExpired: (count) =>
+      count === 1 ? 'Un mot de passe a expiré' : `${String(count)} mots de passe ont expiré`,
+    rotationSoon: (count) =>
+      count === 1
+        ? 'Un mot de passe expire bientôt'
+        : `${String(count)} mots de passe expirent bientôt`,
   },
 };

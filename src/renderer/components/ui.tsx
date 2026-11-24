@@ -146,14 +146,27 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Move the focus into the dialog (unless a control already took it with autoFocus)
+  // and give it back to whatever had it when the dialog closes.
+  useEffect(() => {
+    const previous = document.activeElement;
+    const dialog = dialogRef.current;
+    if (dialog !== null && !dialog.contains(document.activeElement)) dialog.focus();
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, []);
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Escape closes the dialog; its controls are focusable */}
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="max-h-full w-full max-w-lg overflow-auto rounded-lg bg-white p-4 shadow-xl dark:bg-zinc-800"
+        className="max-h-full w-full max-w-lg overflow-auto rounded-lg bg-white p-4 shadow-xl focus:outline-none dark:bg-zinc-800"
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.stopPropagation();
