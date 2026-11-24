@@ -74,6 +74,14 @@ export const fr: Strings = {
     saved: 'Enregistré',
     none: 'Sélectionnez un mot de passe',
     decrypting: 'Déchiffrement…',
+    notesHidden_one: '1 ligne masquée',
+    notesHidden_other: '{{count}} lignes masquées',
+    showNotes: 'Afficher les notes',
+    hideNotes: 'Masquer les notes',
+    showContent: 'Afficher le contenu',
+    hideContent: 'Masquer le contenu',
+    firstLineWarning:
+      'La 1re ligne est le mot de passe, mais « {{key}}: » ressemble à un champ. Mettez le mot de passe seul sur la 1re ligne.',
   },
   generator: {
     title: 'Générateur de mots de passe',
@@ -203,7 +211,7 @@ export const fr: Strings = {
     cancel: 'Arrêter',
     progress: '{{done}} / {{total}} déchiffrées',
     none: 'Aucun résultat',
-    masked: 'correspondance dans la ligne du mot de passe',
+    masked: 'correspondance dans une ligne secrète (masquée)',
   },
   keys: {
     title: 'Destinataires du chiffrement',

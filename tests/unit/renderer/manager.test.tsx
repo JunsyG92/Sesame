@@ -157,6 +157,13 @@ describe('Manager', () => {
     await user.click(await screen.findByRole('option', { name: 'bank' }));
     await user.click(await screen.findByRole('button', { name: /Edit/ }));
     const editor = await screen.findByRole('textbox', { name: 'Content' });
+    // Multi-line content is masked until revealed.
+    expect(editor).toHaveAttribute('data-masked', 'true');
+    expect(editor.className).toContain('[-webkit-text-security:disc]');
+    await user.click(screen.getByRole('button', { name: /Show content/ }));
+    expect(editor).toHaveAttribute('data-masked', 'false');
+    await user.click(screen.getByRole('button', { name: /Hide content/ }));
+    expect(editor).toHaveAttribute('data-masked', 'true');
     await user.click(screen.getByRole('button', { name: /Generate/ }));
     await waitFor(() => {
       expect(editor).toHaveValue('GENERATED\nlogin: alice\nurl: example.org\n');
@@ -298,7 +305,7 @@ describe('Manager', () => {
         ]),
       );
     });
-    expect(await screen.findByText('match in the password line')).toBeInTheDocument();
+    expect(await screen.findByText('match in a hidden secret line')).toBeInTheDocument();
     expect(screen.getByText(/login: alice/)).toBeInTheDocument();
   });
 
@@ -446,5 +453,48 @@ describe('Manager', () => {
     );
     await userEvent.setup().click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByText(/sesame --toggle/)).toBeInTheDocument();
+  });
+});
+
+describe('multi-line entries never show secrets unasked', () => {
+  it('warns when the first line is not the password', async () => {
+    const api = new FakeApi({
+      'store:list': () => ok({ entries: [p('bank')], folders: [] }),
+      'store:show': ({ path }) =>
+        ok({
+          path,
+          password: asPlainSecret('login: alice'),
+          raw: asPlainSecret('login: alice\npassword: hunter2\n'),
+          fields: [{ key: 'password', value: 'hunter2', line: 2 }],
+          notes: '',
+          login: null,
+          url: null,
+          hasOtp: false,
+          rotation: NO_ROTATION,
+        }),
+    });
+    const user = userEvent.setup();
+    renderWith(api, <Manager settings={SETTINGS} status={STATUS} />);
+    await user.click(await screen.findByRole('option', { name: 'bank' }));
+    // The `password:` field is masked in the details…
+    expect(await screen.findByLabelText('password')).toHaveTextContent('••••••••');
+    expect(screen.queryByText('hunter2')).not.toBeInTheDocument();
+    // …and the editor explains that the password belongs on the first line.
+    await user.click(screen.getByRole('button', { name: /Edit/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The first line is the password, but “login:” looks like a field.',
+    );
+  });
+
+  it('masks the notes of the creation form with the password', async () => {
+    const api = new FakeApi({ 'store:list': () => ok({ entries: [], folders: [] }) });
+    const user = userEvent.setup();
+    renderWith(api, <Manager settings={SETTINGS} status={STATUS} />);
+    await user.click(screen.getByRole('button', { name: 'New password' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New password' });
+    const notes = within(dialog).getByLabelText('Notes');
+    expect(notes).toHaveAttribute('data-masked', 'true');
+    await user.click(within(dialog).getByRole('button', { name: 'Show' }));
+    expect(notes).toHaveAttribute('data-masked', 'false');
   });
 });

@@ -507,10 +507,14 @@ describe('PasswordStore', () => {
   describe('grep', () => {
     beforeEach(async () => {
       unwrap(
-        await sandbox.store.insert(entry('web/a'), secret('needle-pw\nlogin: Alice\nnote NEEDLE'), {
-          force: false,
-          kind: 'given',
-        }),
+        await sandbox.store.insert(
+          entry('web/a'),
+          secret('needle-pw\nlogin: Alice\nnote NEEDLE\npin: needle-1234'),
+          {
+            force: false,
+            kind: 'given',
+          },
+        ),
       );
       unwrap(
         await sandbox.store.insert(entry('web/b'), secret('other\nlogin: bob'), {
@@ -531,6 +535,7 @@ describe('PasswordStore', () => {
           lines: [
             { line: 1, text: '', masked: true },
             { line: 3, text: 'note NEEDLE', masked: false },
+            { line: 4, text: '', masked: true },
           ],
         },
       ]);
@@ -539,6 +544,7 @@ describe('PasswordStore', () => {
         [2, 2],
       ]);
       expect(JSON.stringify(matches)).not.toContain('needle-pw');
+      expect(JSON.stringify(matches)).not.toContain('needle-1234');
     });
 
     it('supports regular expressions', async () => {

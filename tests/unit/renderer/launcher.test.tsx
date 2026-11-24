@@ -158,9 +158,16 @@ describe('Launcher', () => {
         { path: 'bank', target: { what: 'line', line: 3 } },
       ]);
     });
+    // Sensitive fields such as `pin:` are masked like the password.
+    expect(screen.queryByText('1234')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('pin')).toHaveTextContent('••••••••');
     // Revealing the password marks the window as showing a secret.
-    await user.click(screen.getByRole('button', { name: 'Show' }));
+    const [revealPassword, revealPin] = screen.getAllByRole('button', { name: 'Show' });
+    if (revealPassword === undefined || revealPin === undefined) throw new Error('reveal buttons');
+    await user.click(revealPassword);
     expect(screen.getByLabelText('Password')).toHaveTextContent('pw');
+    await user.click(revealPin);
+    expect(screen.getByLabelText('pin')).toHaveTextContent('1234');
     expect(api.callsTo('app:secretVisible')).toContainEqual({ visible: true });
   });
 
@@ -373,7 +380,12 @@ describe('Launcher', () => {
     });
     const { user, input } = setup(api);
     await user.type(input, 'bank{Tab}');
-    expect(await screen.findByText('secret note')).toBeInTheDocument();
+    // Notes are hidden until revealed.
+    expect(await screen.findByText('1 hidden line')).toBeInTheDocument();
+    expect(screen.queryByText('secret note')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Show notes/ }));
+    expect(screen.getByText('secret note')).toBeInTheDocument();
+    expect(api.callsTo('app:secretVisible')).toContainEqual({ visible: true });
     act(() => {
       api.emit('app:lock', null);
     });

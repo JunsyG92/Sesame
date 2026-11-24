@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { validateEntryPath } from '../../shared/entryPath';
+import { fieldKeyOf, isSensitiveKey } from '../../shared/sensitive';
 import type { AppError } from '../../shared/errors';
 import type { CopyOutcome, CopyTarget, EntryView, GeneratorOptions } from '../../shared/schemas';
 import { asPlainSecret, EntryPathSchema, type EntryPath } from '../../shared/types';
@@ -8,8 +9,11 @@ import { errorMessage, pathReason } from '../i18n';
 import { useApi } from '../lib/api';
 import { GeneratorOptionsForm, GeneratorPreview } from './Generator';
 import { RotationSection } from './rotation';
-import { OtpDisplay, SecretText, useSecretVisible } from './secrets';
+import { EyeIcon, OtpDisplay, SecretText, useSecretVisible } from './secrets';
 import { Button, Field, inputClass, Modal } from './ui';
+
+/** Renders typed text as bullets (like a password field), keeping it editable. */
+export const MASKED_TEXT = '[-webkit-text-security:disc]';
 
 export type Notify = (tone: 'info' | 'success' | 'error', text: string) => void;
 
@@ -72,6 +76,43 @@ export function useEntry(path: EntryPath | null, version = 0) {
   if (path === null) return { entry: null, error: null, loading: false };
   if (state.key !== key) return { entry: null, error: null, loading: true };
   return { entry: state.entry, error: state.error, loading: false };
+}
+
+/**
+ * Free-form notes often hold secrets (recovery codes, keys, a second password):
+ * they stay hidden until the user asks to see them.
+ */
+function Notes({ notes }: { notes: string }) {
+  const { t } = useTranslation();
+  const [shown, setShown] = useState(false);
+  useSecretVisible(shown);
+  const lines = notes.split('\n').length;
+  return (
+    <div className="py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-zinc-500">{t('entry.notes')}</span>
+        <Button
+          tone="ghost"
+          aria-pressed={shown}
+          onClick={() => {
+            setShown((value) => !value);
+          }}
+        >
+          <EyeIcon open={!shown} /> {shown ? t('entry.hideNotes') : t('entry.showNotes')}
+        </Button>
+      </div>
+      {shown ? (
+        <pre className="font-sans text-sm whitespace-pre-wrap text-zinc-800 dark:text-zinc-200">
+          {notes}
+        </pre>
+      ) : (
+        <p className="text-sm text-zinc-500">
+          <span aria-hidden="true">•••••••• </span>
+          {t('entry.notesHidden', { count: lines })}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function CopyRow({
@@ -151,7 +192,11 @@ export function EntryDetails({
             label={field.key}
             onCopy={() => void copy(entry.path, { what: 'line', line: field.line })}
           >
-            {field.value}
+            {isSensitiveKey(field.key) ? (
+              <SecretText value={field.value} label={field.key} />
+            ) : (
+              field.value
+            )}
           </CopyRow>
         ))}
       {entry.url === null ? null : (
@@ -182,14 +227,7 @@ export function EntryDetails({
           onChanged?.();
         }}
       />
-      {entry.notes === '' ? null : (
-        <div className="py-2">
-          <span className="text-xs text-zinc-500">{t('entry.notes')}</span>
-          <pre className="font-sans text-sm whitespace-pre-wrap text-zinc-800 dark:text-zinc-200">
-            {entry.notes}
-          </pre>
-        </div>
-      )}
+      {entry.notes === '' ? null : <Notes notes={entry.notes} />}
       {compact ? null : (
         <div className="flex flex-wrap gap-2 pt-3">
           <Button onClick={() => void showQr('password')}>▦ {t('entry.qrPassword')}</Button>
@@ -323,6 +361,10 @@ export function EntryEditor({
   const { t } = useTranslation();
   const id = useId();
   const [content, setContent] = useState<string>(entry.raw);
+  // Multi-line content is masked like a password field until the user reveals it.
+  const [revealed, setRevealed] = useState(false);
+  const firstLine = content.split(/\r?\n/, 1)[0] ?? '';
+  const firstLineKey = content.includes('\n') ? fieldKeyOf(firstLine) : null;
   useSecretVisible(true);
   const generateFirstLine = async (): Promise<void> => {
     const result = await api.invoke('generator:preview', generator);
@@ -360,20 +402,39 @@ export function EntryEditor({
         <label htmlFor={id} className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {t('entry.content')}
         </label>
-        <Button tone="ghost" onClick={() => void generateFirstLine()}>
-          ⚄ {t('entry.generate')}
-        </Button>
+        <div className="flex gap-1">
+          <Button
+            tone="ghost"
+            aria-pressed={revealed}
+            onClick={() => {
+              setRevealed((value) => !value);
+            }}
+          >
+            <EyeIcon open={!revealed} />{' '}
+            {revealed ? t('entry.hideContent') : t('entry.showContent')}
+          </Button>
+          <Button tone="ghost" onClick={() => void generateFirstLine()}>
+            ⚄ {t('entry.generate')}
+          </Button>
+        </div>
       </div>
       <textarea
         id={id}
         autoFocus
         spellCheck={false}
-        className={`${inputClass} min-h-40 font-mono`}
+        autoComplete="off"
+        data-masked={!revealed}
+        className={`${inputClass} min-h-40 font-mono ${revealed ? '' : MASKED_TEXT}`}
         value={content}
         onChange={(event) => {
           setContent(event.target.value);
         }}
       />
+      {firstLineKey === null ? null : (
+        <span role="alert" className="text-xs text-amber-700 dark:text-amber-400">
+          {t('entry.firstLineWarning', { key: firstLineKey })}
+        </span>
+      )}
       <span className="text-xs text-zinc-500">{t('entry.contentHelp')}</span>
       <div className="flex justify-end gap-2">
         <Button
@@ -513,7 +574,10 @@ export function CreateForm({
       </div>
       <Field label={t('create.notes')}>
         <textarea
-          className={`${inputClass} min-h-16`}
+          className={`${inputClass} min-h-16 ${shown ? '' : MASKED_TEXT}`}
+          data-masked={!shown}
+          autoComplete="off"
+          spellCheck={false}
           value={draft.notes}
           onChange={set('notes')}
         />

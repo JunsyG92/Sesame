@@ -71,6 +71,14 @@ export const en = {
     saved: 'Saved',
     none: 'Select a password',
     decrypting: 'Decrypting…',
+    notesHidden_one: '1 hidden line',
+    notesHidden_other: '{{count}} hidden lines',
+    showNotes: 'Show notes',
+    hideNotes: 'Hide notes',
+    showContent: 'Show content',
+    hideContent: 'Hide content',
+    firstLineWarning:
+      'The first line is the password, but “{{key}}:” looks like a field. Put the password alone on the first line.',
   },
   generator: {
     title: 'Password generator',
@@ -199,7 +207,7 @@ export const en = {
     cancel: 'Stop',
     progress: '{{done}} / {{total}} decrypted',
     none: 'No match',
-    masked: 'match in the password line',
+    masked: 'match in a hidden secret line',
   },
   keys: {
     title: 'Encryption recipients',

@@ -13,6 +13,7 @@ import {
 import path from 'node:path';
 import type { AppError } from '../../shared/errors';
 import { err, ok, type Result } from '../../shared/result';
+import { isSensitiveLine } from '../../shared/sensitive';
 import type { GrepMatch, RecipientsInfo, StoreListing } from '../../shared/schemas';
 import {
   asPlainSecret,
@@ -483,7 +484,10 @@ export class PasswordStore {
           .map((text, index) => ({ line: index + 1, text }))
           .filter(({ text }) => matcher(text))
           .map(({ line, text }) =>
-            line === 1 ? { line, text: '', masked: true } : { line, text, masked: false },
+            // The password line and sensitive `key: value` lines are never returned in clear.
+            line === 1 || isSensitiveLine(text)
+              ? { line, text: '', masked: true }
+              : { line, text, masked: false },
           );
         if (lines.length > 0) matches.push({ path: entry, lines });
       }
