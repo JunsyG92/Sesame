@@ -15,7 +15,7 @@ import {
 import electronUpdater from 'electron-updater';
 import { formatAccelerator } from '../shared/accelerator';
 import { mainStrings } from '../shared/i18n/main';
-import { setLinuxAutostart } from './autostart';
+import { launchCommand, setLinuxAutostart } from './autostart';
 import {
   captureScreens,
   chooseDirectory,
@@ -196,13 +196,7 @@ async function start(): Promise<void> {
     captureScreens,
     applyShortcut: (accelerator) => shortcuts.apply(accelerator),
     shortcutStatus: () => shortcuts.status,
-    setAutoStart: async (enabled) => {
-      if (platform === 'linux') {
-        await setLinuxAutostart(enabled, process.env, os.homedir(), process.execPath);
-      } else {
-        app.setLoginItemSettings({ openAtLogin: enabled, args: ['--hidden'] });
-      }
-    },
+    setAutoStart: applyAutoStart,
     openManager: (tab) => {
       windows.openManager(tab);
     },
@@ -271,8 +265,42 @@ async function start(): Promise<void> {
     electronUpdater.autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
   }
 
+  // Keep the login item pointing at this installation (package reinstalled, AppImage
+  // moved…). Development builds never touch it: they would hijack the installed app.
+  if (settings.value.autoStart && app.isPackaged && !e2e) {
+    await applyAutoStart(true).catch(() => undefined);
+  }
+
   const status = await services.status();
   const needsSetup = status.gpg.path === null || !status.store.initialized;
   if (needsSetup && firstAction !== 'hidden') windows.openManager();
   else perform(firstAction);
+
+  // Started hidden at login without a usable global shortcut (pure Wayland), and
+  // often without a visible tray (GNOME): say so, or the app looks like it never started.
+  if (firstAction === 'hidden' && !shortcuts.status.registered && Notification.isSupported()) {
+    const notice = new Notification({
+      title: strings.startedHidden,
+      body: strings.startedHiddenNoShortcut,
+    });
+    notice.on('click', () => {
+      windows.showLauncher();
+    });
+    notice.show();
+  }
+}
+
+/** Login item: XDG autostart entry on Linux, the OS login items elsewhere. */
+async function applyAutoStart(enabled: boolean): Promise<void> {
+  if (process.platform === 'linux') {
+    const command = launchCommand({
+      env: process.env,
+      execPath: process.execPath,
+      packaged: app.isPackaged,
+      appPath: app.getAppPath(),
+    });
+    await setLinuxAutostart(enabled, process.env, os.homedir(), command);
+  } else {
+    app.setLoginItemSettings({ openAtLogin: enabled, args: ['--hidden'] });
+  }
 }

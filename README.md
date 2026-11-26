@@ -184,6 +184,10 @@ La compatibilité est testée en CI contre le vrai `pass` (Linux et macOS) dans 
 
 Raccourci global, emplacement du store, programme gpg, durée d'effacement du presse-papiers, options par défaut et préréglages du générateur, lancement à l'ouverture de session (`setLoginItemSettings` sous Windows et macOS, `~/.config/autostart/sesame.desktop` sous Linux), thème (système, clair, sombre), langue (français, anglais), verrouillage automatique (oubli des données déchiffrées après N minutes, avec en option `gpgconf --reload gpg-agent`) et mise à jour automatique (désactivable).
 
+### Lancement à l'ouverture de session (Linux)
+
+Cochez **Paramètres → Lancer Sesame à l'ouverture de session**. Sesame crée `~/.config/autostart/sesame.desktop` et le remet à jour à chaque lancement (paquet réinstallé, AppImage déplacée). Au démarrage de session, Sesame démarre **masqué** : utilisez le raccourci global ou l'icône de la zone de notification. Sous GNOME, cette zone n'existe pas sans l'extension « AppIndicator and KStatusNotifierItem Support » ; sous Wayland, si le raccourci global n'a pas pu être enregistré, une notification le signale (liez alors `sesame --toggle` à un raccourci, voir [Wayland](#wayland-raccourci-global)).
+
 ## Développement et build
 
 Prérequis : Node.js ≥ 22, `gpg` et `git` (et `pass` pour le test de compatibilité).

@@ -10,6 +10,8 @@ interface MainStrings {
   clearNow(seconds: number): string;
   clearingIn(seconds: number): string;
   readonly rotationAction: string;
+  readonly startedHidden: string;
+  readonly startedHiddenNoShortcut: string;
   rotationExpired(count: number): string;
   rotationSoon(count: number): string;
 }
@@ -24,6 +26,9 @@ export const mainStrings: Readonly<Record<Locale, MainStrings>> = {
     clearNow: (seconds) => `Clear clipboard now (${String(seconds)} s left)`,
     clearingIn: (seconds) => `Sesame — clipboard cleared in ${String(seconds)} s`,
     rotationAction: 'Click to renew.',
+    startedHidden: 'Sesame is running in the background',
+    startedHiddenNoShortcut:
+      'The global shortcut is not available here (Wayland?). Bind “sesame --toggle” to a shortcut of your desktop, or click to open Sesame.',
     rotationExpired: (count) =>
       count === 1 ? 'A password has expired' : `${String(count)} passwords have expired`,
     rotationSoon: (count) =>
@@ -38,6 +43,9 @@ export const mainStrings: Readonly<Record<Locale, MainStrings>> = {
     clearNow: (seconds) => `Effacer le presse-papiers (encore ${String(seconds)} s)`,
     clearingIn: (seconds) => `Sesame — presse-papiers effacé dans ${String(seconds)} s`,
     rotationAction: 'Cliquez pour le renouveler.',
+    startedHidden: 'Sesame tourne en arrière-plan',
+    startedHiddenNoShortcut:
+      'Le raccourci global n’est pas disponible ici (Wayland ?). Liez « sesame --toggle » à un raccourci de votre bureau, ou cliquez pour ouvrir Sesame.',
     rotationExpired: (count) =>
       count === 1 ? 'Un mot de passe a expiré' : `${String(count)} mots de passe ont expiré`,
     rotationSoon: (count) =>
